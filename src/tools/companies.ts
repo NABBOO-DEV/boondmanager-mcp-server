@@ -45,6 +45,17 @@ Args:
 Returns: Données générales de la société.`,
   },
   {
+    name: "contacts",
+    tab: "contacts",
+    title: "Contacts d'une société",
+    description: `Récupère les contacts associés à une société.
+
+Args:
+  - id (string): ID de la société
+
+Returns: Liste des contacts de la société.`,
+  },
+  {
     name: "actions",
     tab: "actions",
     title: "Actions liées à une société",
@@ -56,15 +67,70 @@ Args:
 Returns: Liste des actions liées à la société.`,
   },
   {
-    name: "documents",
-    tab: "documents",
-    title: "Documents d'une société",
-    description: `Récupère les documents attachés à une société (contrats cadre, accords, présentations...).
+    name: "opportunities",
+    tab: "opportunities",
+    title: "Opportunités d'une société",
+    description: `Récupère les opportunités commerciales d'une société.
 
 Args:
   - id (string): ID de la société
 
-Returns: Liste des documents de la société.`,
+Returns: Liste des opportunités de la société.`,
+  },
+  {
+    name: "projects",
+    tab: "projects",
+    title: "Projets d'une société",
+    description: `Récupère les projets associés à une société.
+
+Args:
+  - id (string): ID de la société
+
+Returns: Liste des projets de la société.`,
+  },
+  {
+    name: "orders",
+    tab: "orders",
+    title: "Bons de commande d'une société",
+    description: `Récupère les bons de commande d'une société.
+
+Args:
+  - id (string): ID de la société
+
+Returns: Liste des bons de commande de la société.`,
+  },
+  {
+    name: "invoices",
+    tab: "invoices",
+    title: "Factures d'une société",
+    description: `Récupère les factures d'une société.
+
+Args:
+  - id (string): ID de la société
+
+Returns: Liste des factures de la société.`,
+  },
+  {
+    name: "purchases",
+    tab: "purchases",
+    title: "Achats d'une société",
+    description: `Récupère les achats/sous-traitance d'une société.
+
+Args:
+  - id (string): ID de la société
+
+Returns: Liste des achats de la société.`,
+  },
+  {
+    name: "provider_invoices",
+    tab: "provider-invoices",
+    title: "Factures fournisseur d'une société",
+    description: `Récupère les factures fournisseur d'une société.
+
+Args:
+  - id (string): ID de la société
+
+Returns: Liste des factures fournisseur de la société.`,
   },
 ];
 

@@ -45,8 +45,8 @@ Args:
 Returns: Données personnelles et administratives de la ressource.`,
   },
   {
-    name: "technical",
-    tab: "technical",
+    name: "technical_data",
+    tab: "technical-data",
     title: "Compétences techniques d'une ressource",
     description: `Récupère le profil technique d'une ressource (compétences, expériences, formations, certifications, langues, CV...).
 
@@ -56,15 +56,26 @@ Args:
 Returns: Données techniques et compétences de la ressource.`,
   },
   {
-    name: "financial",
-    tab: "financial",
-    title: "Données financières d'une ressource",
-    description: `Récupère les informations financières d'une ressource (salaire, TJM, coût journalier, frais, avantages, historique de rémunération...).
+    name: "administrative",
+    tab: "administrative",
+    title: "Données administratives d'une ressource",
+    description: `Récupère les informations administratives d'une ressource (salaire, TJM, coût journalier, informations RH...).
 
 Args:
   - id (string): ID de la ressource
 
-Returns: Données financières et de rémunération de la ressource.`,
+Returns: Données administratives et RH de la ressource.`,
+  },
+  {
+    name: "advantages",
+    tab: "advantages",
+    title: "Avantages d'une ressource",
+    description: `Récupère les avantages associés à une ressource (tickets restaurant, mutuelle, véhicule, primes...).
+
+Args:
+  - id (string): ID de la ressource
+
+Returns: Liste des avantages de la ressource.`,
   },
   {
     name: "actions",
@@ -78,26 +89,59 @@ Args:
 Returns: Liste des actions liées à la ressource.`,
   },
   {
-    name: "contracts",
-    tab: "contracts",
-    title: "Contrats d'une ressource",
-    description: `Récupère les contrats de travail d'une ressource (CDI, CDD, freelance, dates, conditions, avenants...).
+    name: "positionings",
+    tab: "positionings",
+    title: "Positionnements d'une ressource",
+    description: `Récupère les positionnements (placements sur des projets) d'une ressource.
 
 Args:
   - id (string): ID de la ressource
 
-Returns: Liste des contrats de la ressource.`,
+Returns: Liste des positionnements de la ressource.`,
   },
   {
-    name: "documents",
-    tab: "documents",
-    title: "Documents d'une ressource",
-    description: `Récupère les documents attachés à une ressource (CV, pièces d'identité, contrats signés, certifications...).
+    name: "projects",
+    tab: "projects",
+    title: "Projets d'une ressource",
+    description: `Récupère les projets auxquels une ressource participe ou a participé.
 
 Args:
   - id (string): ID de la ressource
 
-Returns: Liste des documents de la ressource.`,
+Returns: Liste des projets de la ressource.`,
+  },
+  {
+    name: "times_reports",
+    tab: "times-reports",
+    title: "Feuilles de temps d'une ressource",
+    description: `Récupère les feuilles de temps d'une ressource.
+
+Args:
+  - id (string): ID de la ressource
+
+Returns: Liste des feuilles de temps de la ressource.`,
+  },
+  {
+    name: "expenses_reports",
+    tab: "expenses-reports",
+    title: "Notes de frais d'une ressource",
+    description: `Récupère les notes de frais d'une ressource.
+
+Args:
+  - id (string): ID de la ressource
+
+Returns: Liste des notes de frais de la ressource.`,
+  },
+  {
+    name: "absences_reports",
+    tab: "absences-reports",
+    title: "Demandes d'absences d'une ressource",
+    description: `Récupère les demandes d'absences d'une ressource (congés, RTT, maladie...).
+
+Args:
+  - id (string): ID de la ressource
+
+Returns: Liste des demandes d'absences de la ressource.`,
   },
 ];
 

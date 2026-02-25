@@ -75,7 +75,7 @@ Returns: Liste des feuilles de temps de la ressource avec jours/heures et statut
       if (params.year !== undefined) queryParams["year"] = params.year;
 
       const response = await apiRequest(
-        `/resources/${params.resourceId}/timesreports`,
+        `/resources/${params.resourceId}/times-reports`,
         "GET",
         undefined,
         queryParams
@@ -111,7 +111,7 @@ Returns: Liste des feuilles de temps correspondantes.`,
     },
     async (params: TimesheetSearchInput) => {
       const query = buildSearchQuery(params);
-      const response = await apiRequest("/timesreports", "GET", undefined, query);
+      const response = await apiRequest("/times-reports", "GET", undefined, query);
       const text = formatTimesheetSummary(response);
       return {
         content: [{ type: "text" as const, text }],
@@ -139,7 +139,7 @@ Returns: Données JSON complètes de la feuille de temps (jours, heures, statut,
       },
     },
     async (params: TimesheetGetInput) => {
-      const response = await apiRequest(`/timesreports/${params.id}`);
+      const response = await apiRequest(`/times-reports/${params.id}`);
       const text = formatDetailResponse(response);
       return {
         content: [{ type: "text" as const, text }],

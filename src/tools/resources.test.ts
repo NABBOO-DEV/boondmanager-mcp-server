@@ -15,9 +15,9 @@ describe("registerResourceTools", () => {
     server = createMockServer();
   });
 
-  it("should register CRUD tools + 6 tab tools = 11 total", () => {
+  it("should register CRUD tools + 10 tab tools = 15 total", () => {
     registerResourceTools(server);
-    expect(server.registerTool).toHaveBeenCalledTimes(11);
+    expect(server.registerTool).toHaveBeenCalledTimes(15);
   });
 
   it("should register all CRUD tools", () => {
@@ -30,15 +30,19 @@ describe("registerResourceTools", () => {
     expect(names).toContain("boond_resources_delete");
   });
 
-  it("should register all 6 tab tools", () => {
+  it("should register all 10 tab tools", () => {
     registerResourceTools(server);
     const names = vi.mocked(server.registerTool).mock.calls.map((c) => c[0]);
     expect(names).toContain("boond_resources_information");
-    expect(names).toContain("boond_resources_technical");
-    expect(names).toContain("boond_resources_financial");
+    expect(names).toContain("boond_resources_technical_data");
+    expect(names).toContain("boond_resources_administrative");
+    expect(names).toContain("boond_resources_advantages");
     expect(names).toContain("boond_resources_actions");
-    expect(names).toContain("boond_resources_contracts");
-    expect(names).toContain("boond_resources_documents");
+    expect(names).toContain("boond_resources_positionings");
+    expect(names).toContain("boond_resources_projects");
+    expect(names).toContain("boond_resources_times_reports");
+    expect(names).toContain("boond_resources_expenses_reports");
+    expect(names).toContain("boond_resources_absences_reports");
   });
 
   it("should register tab tools as readOnly and non-destructive", () => {
@@ -46,15 +50,19 @@ describe("registerResourceTools", () => {
     const tabCalls = vi.mocked(server.registerTool).mock.calls.filter(
       (c) => typeof c[0] === "string" && [
         "boond_resources_information",
-        "boond_resources_technical",
-        "boond_resources_financial",
+        "boond_resources_technical_data",
+        "boond_resources_administrative",
+        "boond_resources_advantages",
         "boond_resources_actions",
-        "boond_resources_contracts",
-        "boond_resources_documents",
+        "boond_resources_positionings",
+        "boond_resources_projects",
+        "boond_resources_times_reports",
+        "boond_resources_expenses_reports",
+        "boond_resources_absences_reports",
       ].includes(c[0] as string)
     );
 
-    expect(tabCalls).toHaveLength(6);
+    expect(tabCalls).toHaveLength(10);
     for (const call of tabCalls) {
       const [, metadata] = call;
       expect(metadata.annotations?.readOnlyHint).toBe(true);

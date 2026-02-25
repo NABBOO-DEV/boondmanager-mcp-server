@@ -50,7 +50,7 @@ Returns: Liste des notes de frais correspondantes.`,
       },
     },
     async (params) => {
-      const response = await apiRequest(`/expenses/${params.id}`);
+      const response = await apiRequest(`/expenses-reports/${params.id}`);
       return {
         content: [{ type: "text" as const, text: formatDetailResponse(response) }],
       };
@@ -80,7 +80,7 @@ Returns: Liste des notes de frais correspondantes.`,
       if (Object.keys(relationships).length > 0) {
         (body as Record<string, Record<string, unknown>>).data.relationships = relationships;
       }
-      const response = await apiRequest("/expenses", "POST", body);
+      const response = await apiRequest("/expenses-reports", "POST", body);
       const entity = Array.isArray(response.data) ? response.data[0] : response.data;
       return {
         content: [{
@@ -108,7 +108,7 @@ Returns: Liste des notes de frais correspondantes.`,
     async (params) => {
       const { id, ...attrs } = params;
       const body = buildJsonApiBody("expense", attrs, id);
-      const response = await apiRequest(`/expenses/${id}`, "PATCH", body);
+      const response = await apiRequest(`/expenses-reports/${id}`, "PUT", body);
       return {
         content: [{
           type: "text" as const,
@@ -133,7 +133,7 @@ Returns: Liste des notes de frais correspondantes.`,
       },
     },
     async (params) => {
-      await apiRequest(`/expenses/${params.id}`, "DELETE");
+      await apiRequest(`/expenses-reports/${params.id}`, "DELETE");
       return {
         content: [{ type: "text" as const, text: `🗑️ Note de frais #${params.id} supprimée.` }],
       };

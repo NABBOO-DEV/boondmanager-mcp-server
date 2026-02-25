@@ -56,15 +56,48 @@ Args:
 Returns: Liste des actions liées au contact.`,
   },
   {
-    name: "documents",
-    tab: "documents",
-    title: "Documents d'un contact",
-    description: `Récupère les documents attachés à un contact.
+    name: "opportunities",
+    tab: "opportunities",
+    title: "Opportunités d'un contact",
+    description: `Récupère les opportunités commerciales associées à un contact.
 
 Args:
   - id (string): ID du contact
 
-Returns: Liste des documents du contact.`,
+Returns: Liste des opportunités du contact.`,
+  },
+  {
+    name: "projects",
+    tab: "projects",
+    title: "Projets d'un contact",
+    description: `Récupère les projets associés à un contact.
+
+Args:
+  - id (string): ID du contact
+
+Returns: Liste des projets du contact.`,
+  },
+  {
+    name: "orders",
+    tab: "orders",
+    title: "Bons de commande d'un contact",
+    description: `Récupère les bons de commande associés à un contact.
+
+Args:
+  - id (string): ID du contact
+
+Returns: Liste des bons de commande du contact.`,
+  },
+  {
+    name: "invoices",
+    tab: "invoices",
+    title: "Factures d'un contact",
+    description: `Récupère les factures associées à un contact.
+
+Args:
+  - id (string): ID du contact
+
+Returns: Liste des factures du contact.`,
   },
 ];
 

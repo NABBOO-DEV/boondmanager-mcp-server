@@ -50,7 +50,7 @@ Returns: Liste des absences correspondantes.`,
       },
     },
     async (params) => {
-      const response = await apiRequest(`/absences/${params.id}`);
+      const response = await apiRequest(`/absences-reports/${params.id}`);
       return {
         content: [{ type: "text" as const, text: formatDetailResponse(response) }],
       };
@@ -79,7 +79,7 @@ Returns: Liste des absences correspondantes.`,
           resource: { data: { id: resourceId, type: "resource" } },
         };
       }
-      const response = await apiRequest("/absences", "POST", body);
+      const response = await apiRequest("/absences-reports", "POST", body);
       const entity = Array.isArray(response.data) ? response.data[0] : response.data;
       return {
         content: [{
@@ -107,7 +107,7 @@ Returns: Liste des absences correspondantes.`,
     async (params) => {
       const { id, ...attrs } = params;
       const body = buildJsonApiBody("absence", attrs, id);
-      const response = await apiRequest(`/absences/${id}`, "PATCH", body);
+      const response = await apiRequest(`/absences-reports/${id}`, "PUT", body);
       return {
         content: [{
           type: "text" as const,
@@ -132,7 +132,7 @@ Returns: Liste des absences correspondantes.`,
       },
     },
     async (params) => {
-      await apiRequest(`/absences/${params.id}`, "DELETE");
+      await apiRequest(`/absences-reports/${params.id}`, "DELETE");
       return {
         content: [{ type: "text" as const, text: `🗑️ Absence #${params.id} supprimée.` }],
       };

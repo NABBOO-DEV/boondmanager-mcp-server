@@ -56,15 +56,37 @@ Args:
 Returns: Liste des actions liées à l'opportunité.`,
   },
   {
-    name: "documents",
-    tab: "documents",
-    title: "Documents d'une opportunité",
-    description: `Récupère les documents attachés à une opportunité (propositions commerciales, cahiers des charges...).
+    name: "positionings",
+    tab: "positionings",
+    title: "Positionnements d'une opportunité",
+    description: `Récupère les positionnements (candidats/ressources proposés) sur une opportunité.
 
 Args:
   - id (string): ID de l'opportunité
 
-Returns: Liste des documents de l'opportunité.`,
+Returns: Liste des positionnements de l'opportunité.`,
+  },
+  {
+    name: "projects",
+    tab: "projects",
+    title: "Projets liés à une opportunité",
+    description: `Récupère les projets issus de cette opportunité.
+
+Args:
+  - id (string): ID de l'opportunité
+
+Returns: Liste des projets liés à l'opportunité.`,
+  },
+  {
+    name: "simulation",
+    tab: "simulation",
+    title: "Simulation financière d'une opportunité",
+    description: `Récupère la simulation financière d'une opportunité (marge, CA prévisionnel, coûts...).
+
+Args:
+  - id (string): ID de l'opportunité
+
+Returns: Données de simulation financière de l'opportunité.`,
   },
 ];
 

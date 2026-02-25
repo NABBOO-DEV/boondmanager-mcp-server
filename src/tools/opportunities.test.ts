@@ -15,9 +15,9 @@ describe("registerOpportunityTools", () => {
     server = createMockServer();
   });
 
-  it("should register CRUD tools + 3 tab tools = 8 total", () => {
+  it("should register CRUD tools + 5 tab tools = 10 total", () => {
     registerOpportunityTools(server);
-    expect(server.registerTool).toHaveBeenCalledTimes(8);
+    expect(server.registerTool).toHaveBeenCalledTimes(10);
   });
 
   it("should register all CRUD tools", () => {
@@ -30,12 +30,14 @@ describe("registerOpportunityTools", () => {
     expect(names).toContain("boond_opportunities_delete");
   });
 
-  it("should register all 3 tab tools", () => {
+  it("should register all 5 tab tools", () => {
     registerOpportunityTools(server);
     const names = vi.mocked(server.registerTool).mock.calls.map((c) => c[0]);
     expect(names).toContain("boond_opportunities_information");
     expect(names).toContain("boond_opportunities_actions");
-    expect(names).toContain("boond_opportunities_documents");
+    expect(names).toContain("boond_opportunities_positionings");
+    expect(names).toContain("boond_opportunities_projects");
+    expect(names).toContain("boond_opportunities_simulation");
   });
 
   it("should register tab tools as readOnly and non-destructive", () => {
@@ -44,11 +46,13 @@ describe("registerOpportunityTools", () => {
       (c) => typeof c[0] === "string" && [
         "boond_opportunities_information",
         "boond_opportunities_actions",
-        "boond_opportunities_documents",
+        "boond_opportunities_positionings",
+        "boond_opportunities_projects",
+        "boond_opportunities_simulation",
       ].includes(c[0] as string)
     );
 
-    expect(tabCalls).toHaveLength(3);
+    expect(tabCalls).toHaveLength(5);
     for (const call of tabCalls) {
       const [, metadata] = call;
       expect(metadata.annotations?.readOnlyHint).toBe(true);

@@ -15,9 +15,9 @@ describe("registerCandidateTools", () => {
     server = createMockServer();
   });
 
-  it("should register CRUD tools + 4 tab tools = 9 total", () => {
+  it("should register CRUD tools + 5 tab tools = 10 total", () => {
     registerCandidateTools(server);
-    expect(server.registerTool).toHaveBeenCalledTimes(9);
+    expect(server.registerTool).toHaveBeenCalledTimes(10);
   });
 
   it("should register all CRUD tools", () => {
@@ -30,13 +30,14 @@ describe("registerCandidateTools", () => {
     expect(names).toContain("boond_candidates_delete");
   });
 
-  it("should register all 4 tab tools", () => {
+  it("should register all 5 tab tools", () => {
     registerCandidateTools(server);
     const names = vi.mocked(server.registerTool).mock.calls.map((c) => c[0]);
     expect(names).toContain("boond_candidates_information");
-    expect(names).toContain("boond_candidates_technical");
+    expect(names).toContain("boond_candidates_technical_data");
+    expect(names).toContain("boond_candidates_administrative");
     expect(names).toContain("boond_candidates_actions");
-    expect(names).toContain("boond_candidates_documents");
+    expect(names).toContain("boond_candidates_positionings");
   });
 
   it("should register tab tools as readOnly and non-destructive", () => {
@@ -44,13 +45,14 @@ describe("registerCandidateTools", () => {
     const tabCalls = vi.mocked(server.registerTool).mock.calls.filter(
       (c) => typeof c[0] === "string" && [
         "boond_candidates_information",
-        "boond_candidates_technical",
+        "boond_candidates_technical_data",
+        "boond_candidates_administrative",
         "boond_candidates_actions",
-        "boond_candidates_documents",
+        "boond_candidates_positionings",
       ].includes(c[0] as string)
     );
 
-    expect(tabCalls).toHaveLength(4);
+    expect(tabCalls).toHaveLength(5);
     for (const call of tabCalls) {
       const [, metadata] = call;
       expect(metadata.annotations?.readOnlyHint).toBe(true);

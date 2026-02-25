@@ -45,8 +45,8 @@ Args:
 Returns: Données personnelles et administratives du candidat.`,
   },
   {
-    name: "technical",
-    tab: "technical",
+    name: "technical_data",
+    tab: "technical-data",
     title: "Compétences techniques d'un candidat",
     description: `Récupère le profil technique d'un candidat (compétences, expériences, formations, certifications, langues, CV...).
 
@@ -54,6 +54,17 @@ Args:
   - id (string): ID du candidat
 
 Returns: Données techniques et compétences du candidat.`,
+  },
+  {
+    name: "administrative",
+    tab: "administrative",
+    title: "Données administratives d'un candidat",
+    description: `Récupère les informations administratives d'un candidat.
+
+Args:
+  - id (string): ID du candidat
+
+Returns: Données administratives du candidat.`,
   },
   {
     name: "actions",
@@ -67,15 +78,15 @@ Args:
 Returns: Liste des actions liées au candidat.`,
   },
   {
-    name: "documents",
-    tab: "documents",
-    title: "Documents d'un candidat",
-    description: `Récupère les documents attachés à un candidat (CV, lettres de motivation, certifications...).
+    name: "positionings",
+    tab: "positionings",
+    title: "Positionnements d'un candidat",
+    description: `Récupère les positionnements (placements sur des opportunités/projets) d'un candidat.
 
 Args:
   - id (string): ID du candidat
 
-Returns: Liste des documents du candidat.`,
+Returns: Liste des positionnements du candidat.`,
   },
 ];
 

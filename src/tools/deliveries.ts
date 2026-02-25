@@ -27,7 +27,7 @@ Returns: Liste des livraisons correspondantes.`,
     },
     async (params) => {
       const query = buildSearchQuery(params);
-      const response = await apiRequest("/deliveries", "GET", undefined, query);
+      const response = await apiRequest("/deliveries-groupments", "GET", undefined, query);
       return {
         content: [{ type: "text" as const, text: formatListResponse(response, "livraison") }],
       };

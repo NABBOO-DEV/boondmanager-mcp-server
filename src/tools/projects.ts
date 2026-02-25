@@ -45,17 +45,6 @@ Args:
 Returns: Données générales du projet.`,
   },
   {
-    name: "planning",
-    tab: "planning",
-    title: "Planning d'un projet",
-    description: `Récupère le planning d'un projet (jalons, phases, dates prévisionnelles et réelles...).
-
-Args:
-  - id (string): ID du projet
-
-Returns: Données de planning du projet.`,
-  },
-  {
     name: "actions",
     tab: "actions",
     title: "Actions liées à un projet",
@@ -67,15 +56,59 @@ Args:
 Returns: Liste des actions liées au projet.`,
   },
   {
-    name: "documents",
-    tab: "documents",
-    title: "Documents d'un projet",
-    description: `Récupère les documents attachés à un projet (contrats, avenants, spécifications, livrables...).
+    name: "simulation",
+    tab: "simulation",
+    title: "Simulation financière d'un projet",
+    description: `Récupère la simulation financière d'un projet (marge, CA, coûts, rentabilité...).
 
 Args:
   - id (string): ID du projet
 
-Returns: Liste des documents du projet.`,
+Returns: Données de simulation financière du projet.`,
+  },
+  {
+    name: "deliveries_groupments",
+    tab: "deliveries-groupments",
+    title: "Livraisons d'un projet",
+    description: `Récupère les livraisons (CRA) et groupements associés à un projet.
+
+Args:
+  - id (string): ID du projet
+
+Returns: Liste des livraisons du projet.`,
+  },
+  {
+    name: "orders",
+    tab: "orders",
+    title: "Bons de commande d'un projet",
+    description: `Récupère les bons de commande associés à un projet.
+
+Args:
+  - id (string): ID du projet
+
+Returns: Liste des bons de commande du projet.`,
+  },
+  {
+    name: "purchases",
+    tab: "purchases",
+    title: "Achats/sous-traitance d'un projet",
+    description: `Récupère les achats et la sous-traitance associés à un projet.
+
+Args:
+  - id (string): ID du projet
+
+Returns: Liste des achats du projet.`,
+  },
+  {
+    name: "productivity",
+    tab: "productivity",
+    title: "Productivité d'un projet",
+    description: `Récupère les données de productivité d'un projet (temps passé, jours consommés...).
+
+Args:
+  - id (string): ID du projet
+
+Returns: Données de productivité du projet.`,
   },
 ];
 

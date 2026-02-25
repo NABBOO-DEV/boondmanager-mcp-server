@@ -48,12 +48,18 @@ describe("constants", () => {
 
   it("ENTITY_TABS should have tabs for each domain", () => {
     expect(ENTITY_TABS.candidates).toContain("information");
+    expect(ENTITY_TABS.candidates).toContain("technical-data");
     expect(ENTITY_TABS.resources).toContain("information");
-    expect(ENTITY_TABS.resources).toContain("financial");
+    expect(ENTITY_TABS.resources).toContain("technical-data");
+    expect(ENTITY_TABS.resources).toContain("administrative");
     expect(ENTITY_TABS.contacts).toContain("information");
     expect(ENTITY_TABS.companies).toContain("information");
+    expect(ENTITY_TABS.companies).toContain("contacts");
     expect(ENTITY_TABS.opportunities).toContain("information");
+    expect(ENTITY_TABS.opportunities).toContain("positionings");
     expect(ENTITY_TABS.projects).toContain("information");
-    expect(ENTITY_TABS.projects).toContain("planning");
+    expect(ENTITY_TABS.projects).toContain("simulation");
+    expect(ENTITY_TABS.invoices).toContain("information");
+    expect(ENTITY_TABS.orders).toContain("information");
   });
 });

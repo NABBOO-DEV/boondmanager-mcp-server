@@ -61,7 +61,7 @@ Returns: Données JSON de l'utilisateur courant.`,
       },
     },
     async () => {
-      const response = await apiRequest("/application/me");
+      const response = await apiRequest("/application/current-user");
       const text = formatDetailResponse(response);
       return {
         content: [{ type: "text" as const, text }],

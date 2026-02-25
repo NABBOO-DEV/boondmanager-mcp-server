@@ -15,9 +15,9 @@ describe("registerProjectTools", () => {
     server = createMockServer();
   });
 
-  it("should register CRUD tools + 4 tab tools = 9 total", () => {
+  it("should register CRUD tools + 7 tab tools = 12 total", () => {
     registerProjectTools(server);
-    expect(server.registerTool).toHaveBeenCalledTimes(9);
+    expect(server.registerTool).toHaveBeenCalledTimes(12);
   });
 
   it("should register all CRUD tools", () => {
@@ -30,13 +30,16 @@ describe("registerProjectTools", () => {
     expect(names).toContain("boond_projects_delete");
   });
 
-  it("should register all 4 tab tools", () => {
+  it("should register all 7 tab tools", () => {
     registerProjectTools(server);
     const names = vi.mocked(server.registerTool).mock.calls.map((c) => c[0]);
     expect(names).toContain("boond_projects_information");
-    expect(names).toContain("boond_projects_planning");
     expect(names).toContain("boond_projects_actions");
-    expect(names).toContain("boond_projects_documents");
+    expect(names).toContain("boond_projects_simulation");
+    expect(names).toContain("boond_projects_deliveries_groupments");
+    expect(names).toContain("boond_projects_orders");
+    expect(names).toContain("boond_projects_purchases");
+    expect(names).toContain("boond_projects_productivity");
   });
 
   it("should register tab tools as readOnly and non-destructive", () => {
@@ -44,13 +47,16 @@ describe("registerProjectTools", () => {
     const tabCalls = vi.mocked(server.registerTool).mock.calls.filter(
       (c) => typeof c[0] === "string" && [
         "boond_projects_information",
-        "boond_projects_planning",
         "boond_projects_actions",
-        "boond_projects_documents",
+        "boond_projects_simulation",
+        "boond_projects_deliveries_groupments",
+        "boond_projects_orders",
+        "boond_projects_purchases",
+        "boond_projects_productivity",
       ].includes(c[0] as string)
     );
 
-    expect(tabCalls).toHaveLength(4);
+    expect(tabCalls).toHaveLength(7);
     for (const call of tabCalls) {
       const [, metadata] = call;
       expect(metadata.annotations?.readOnlyHint).toBe(true);

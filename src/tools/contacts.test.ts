@@ -15,9 +15,9 @@ describe("registerContactTools", () => {
     server = createMockServer();
   });
 
-  it("should register CRUD tools + 3 tab tools = 8 total", () => {
+  it("should register CRUD tools + 6 tab tools = 11 total", () => {
     registerContactTools(server);
-    expect(server.registerTool).toHaveBeenCalledTimes(8);
+    expect(server.registerTool).toHaveBeenCalledTimes(11);
   });
 
   it("should register all CRUD tools", () => {
@@ -30,12 +30,15 @@ describe("registerContactTools", () => {
     expect(names).toContain("boond_contacts_delete");
   });
 
-  it("should register all 3 tab tools", () => {
+  it("should register all 6 tab tools", () => {
     registerContactTools(server);
     const names = vi.mocked(server.registerTool).mock.calls.map((c) => c[0]);
     expect(names).toContain("boond_contacts_information");
     expect(names).toContain("boond_contacts_actions");
-    expect(names).toContain("boond_contacts_documents");
+    expect(names).toContain("boond_contacts_opportunities");
+    expect(names).toContain("boond_contacts_projects");
+    expect(names).toContain("boond_contacts_orders");
+    expect(names).toContain("boond_contacts_invoices");
   });
 
   it("should register tab tools as readOnly and non-destructive", () => {
@@ -44,11 +47,14 @@ describe("registerContactTools", () => {
       (c) => typeof c[0] === "string" && [
         "boond_contacts_information",
         "boond_contacts_actions",
-        "boond_contacts_documents",
+        "boond_contacts_opportunities",
+        "boond_contacts_projects",
+        "boond_contacts_orders",
+        "boond_contacts_invoices",
       ].includes(c[0] as string)
     );
 
-    expect(tabCalls).toHaveLength(3);
+    expect(tabCalls).toHaveLength(6);
     for (const call of tabCalls) {
       const [, metadata] = call;
       expect(metadata.annotations?.readOnlyHint).toBe(true);
