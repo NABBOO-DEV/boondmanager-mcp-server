@@ -41,6 +41,24 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Validate MCPB manifest
+        if: matrix.node-version == 22
+        run: npx @anthropic-ai/mcpb validate .
+
+      - name: Verify version consistency
+        if: matrix.node-version == 22
+        run: |
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          MANIFEST_VERSION=$(node -p "require('./manifest.json').version")
+          SERVER_VERSION=$(node -p "require('./server.json').version")
+          echo "package.json:  $PKG_VERSION"
+          echo "manifest.json: $MANIFEST_VERSION"
+          echo "server.json:   $SERVER_VERSION"
+          if [ "$PKG_VERSION" != "$MANIFEST_VERSION" ] || [ "$PKG_VERSION" != "$SERVER_VERSION" ]; then
+            echo "ERROR: Version mismatch between package.json, manifest.json and server.json"
+            exit 1
+          fi
+
       - name: Upload coverage
         if: matrix.node-version == 22
         uses: actions/upload-artifact@v7
