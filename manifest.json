@@ -5,7 +5,7 @@
   "version": "1.5.1",
   "description": "MCP Server for BoondManager API - 158 tools across 36 domains for ERP/CRM data",
   "author": {
-    "name": "Silamir",
+    "name": "Frédéric Auguste",
     "url": "https://github.com/fauguste/boondmanager-mcp-server"
   },
   "repository": {
@@ -14,7 +14,7 @@
   },
   "homepage": "https://github.com/fauguste/boondmanager-mcp-server#readme",
   "support": "https://github.com/fauguste/boondmanager-mcp-server/issues",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "icons": [
     { "src": "icon.png", "size": "128x128" }
   ],
