@@ -3,6 +3,92 @@
 All notable changes to this project will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.5.2] - 2026-04-26
+
+Release principalement orientée **distribution, ergonomie pour le LLM et
+qualité d'exploitation**. Aucune rupture sur les outils existants — les
+six schémas de recherche corrigés en 1.5.1 sont conservés tels quels. Les
+nouveautés ci-dessous s'ajoutent par-dessus.
+
+### Ajouté
+
+- **Prompts MCP pré-orchestrés** (`src/prompts/`) — 6 templates qui
+  enchaînent les bons appels d'outils avec les bons filtres officiels
+  (`perimeterDynamic`, `perimeterManagers`, `period`, etc.) :
+  `synthese_equipe`, `pipeline_commercial`, `factures_a_relancer`,
+  `candidats_pour_opportunite`, `fiche_consultant`, `recap_hebdo`.
+  Visible comme slash-command dans les clients qui supportent les
+  prompts MCP. Le serveur n'exécute rien — il fournit le runbook au
+  modèle.
+- **Ressources MCP (dictionnaires)** (`src/resources/`) — 19 ressources
+  statiques sous `boond://dictionary/*` (états + types pour les six
+  domaines de recherche, plus pays / devises / langues) et
+  `boond://application/current-user`. Permet au modèle de traduire un
+  `state` ou `typeOf` entier en libellé via une lecture de ressource
+  plutôt qu'un appel d'outil. Mime-type `application/json`.
+- **Image Docker multi-arch sur GHCR** —
+  `ghcr.io/fauguste/boondmanager-mcp-server` publiée à chaque tag
+  (`linux/amd64` + `linux/arm64`) avec provenance et SBOM. Démarre par
+  défaut en transport HTTP sur `0.0.0.0:3000`. Tags `:X.Y.Z`, `:X.Y`,
+  `:X`, `:latest`.
+- **Listing Smithery** (`smithery.yaml` à la racine) — config
+  d'installation un-clic avec UI pour les 7 paramètres d'auth Boond.
+  Synchronisé à chaque push sur `main`.
+- **`SECURITY.md`** — politique de divulgation responsable, canal
+  privilégié = GitHub Security Advisory privé, tableau des versions
+  supportées, scope in/out, garanties sur la gestion des credentials
+  (env vars uniquement, aucune persistance, aucun log).
+- **Catalogue d'outils auto-généré** (`TOOLS.md`) — 156 outils, 6
+  prompts, 20 ressources groupés par domaine (alphabétique). Régénéré
+  via `npm run docs:tools`. Une étape CI (`npm run docs:tools:check`)
+  fait échouer le build si le catalogue dérive du code source.
+- **Documentation distribution** (`docs/distribution.md`) — source
+  unique de vérité pour ce qui est publié où (npm, MCP Registry,
+  GitHub Releases .mcpb, GHCR, LobeHub, Smithery), comment chaque canal
+  est synchronisé, et la checklist post-release en 6 points.
+- **`CHANGELOG.md`** — nouvelles entrées en français,
+  systématiquement extraites par le workflow Release pour le corps de
+  la GitHub Release.
+- **Métadonnées `server.json`** — `title`, `websiteUrl`, `repository`,
+  `icons[]` (logo via `raw.githubusercontent.com`) pour enrichir la
+  fiche MCP Registry et les marketplaces qui en découlent (LobeHub).
+- **README** — sections "Ressources MCP", "Prompts pré-orchestrés",
+  exemple Docker GHCR, mention Smithery / LobeChat.
+
+### Modifié
+
+- **Messages d'erreur API** (`src/services/boond-client.ts`) — sur
+  réponse non-2xx, `parseBoondErrorBody()` extrait `errors[].detail`
+  (et `title` quand distinct) du JSON:API d'erreur de Boond, et
+  `formatApiError()` produit un message focalisé avec un *hint*
+  spécifique par statut (401/403/404/422/429/5xx). Le corps brut n'est
+  inclus qu'en repli quand le parsing échoue. Avant : ~500 caractères de
+  JSON brut illisibles ; après : `BoondManager API 422 …: 422 -
+  password mismatch` + diagnostic.
+- **Licence** — passage de **MIT à Apache-2.0**. Voir `LICENSE` et le
+  nouveau `NOTICE`. Aucune action utilisateur requise pour les binaires
+  déjà installés ; les futurs forks doivent intégrer le `NOTICE`.
+
+### Documentation interne
+
+- **`CLAUDE.md`** rafraîchi — section "Search Filter Naming (CRITICAL)"
+  qui cristallise la table de correspondance officielle
+  (`mainManagers → perimeterManagers`, `states → resourceStates / candidateStates / opportunityStates / projectStates / typesOf` selon
+  l'endpoint, vocabulaire `period` par endpoint, préfixes `keywords`
+  `CSOC<id>` / `CCON<id>` / etc.) pour qu'aucun futur agent ne
+  redécouvre les noms à tâtons. Sections "Adding a Prompt" et "Adding
+  a Resource" ajoutées, "CI/CD" mis à jour avec les 4 publications de
+  release et le drift check du catalogue.
+
+### CI/CD
+
+- **`docs:tools:check`** branché dans le workflow CI (Node 22) — toute
+  PR qui ajoute / renomme / supprime un tool, prompt ou ressource doit
+  régénérer `TOOLS.md` (le check fait échouer le build sinon).
+- **Workflow Release étendu** — étapes Docker (QEMU + Buildx + login
+  GHCR + build-push multi-arch) en plus des publications npm + MCP
+  Registry + GitHub Release existantes.
+
 ## [1.5.1] - 2026-04-25
 
 Correctif critique des filtres de recherche structurés introduits en 1.5.0 (#29).
