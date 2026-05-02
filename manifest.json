@@ -2,8 +2,8 @@
   "manifest_version": "0.3",
   "name": "boondmanager-mcp-server",
   "display_name": "BoondManager MCP Server",
-  "version": "1.7.0",
-  "description": "MCP Server for BoondManager API - 156 tools, 11 prompts, 20 resources across 36 domains for ERP/CRM data",
+  "version": "1.7.1",
+  "description": "MCP Server for BoondManager API - 156 tools, 11 prompts, 20 resources (ERP/CRM)",
   "author": {
     "name": "Frédéric Auguste",
     "url": "https://github.com/fauguste/boondmanager-mcp-server"
