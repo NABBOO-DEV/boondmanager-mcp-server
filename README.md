@@ -434,18 +434,22 @@ Le serveur supporte deux transports MCP, selectionnables via la variable d'envir
 
 Depuis la v1.4.0, le serveur peut etre expose en HTTP (specification MCP Streamable HTTP 2025-03-26) afin d'etre branche derriere une passerelle MCP ou deploye comme service.
 
+> **Authentification BoondManager : OAuth2 protected resource.** Le serveur HTTP **ne detient aucun secret** (ni `client_secret`, ni refresh token, ni stockage utilisateur). Chaque requete MCP doit porter `Authorization: Bearer <boond_access_token>` ; le serveur transmet le token tel quel a BoondManager. C'est le **client MCP** (Claude Desktop, Claude Code, gateway…) qui fait la danse OAuth contre BoondManager et qui gere le refresh. Procedure complete : [docs/oauth.md](docs/oauth.md).
+
 ```bash
 export MCP_TRANSPORT=http
 export MCP_HTTP_HOST=0.0.0.0        # defaut: 127.0.0.1
 export MCP_HTTP_PORT=3000           # defaut: 3000
 export MCP_HTTP_PATH=/mcp           # defaut: /mcp
-export MCP_HTTP_BEARER_TOKEN=xxx    # optionnel: protege l'endpoint
-export BOOND_API_TOKEN=...          # (credentials BoondManager, comme en stdio)
+# Optionnel: requis uniquement derriere un reverse proxy, pour que
+# la discovery annonce la bonne URL publique.
+export MCP_HTTP_PUBLIC_URL=https://mcp.votre-domaine.com/mcp
 
 npx boondmanager-mcp-server
 # 🚀 BoondManager MCP Server running (streamable HTTP transport)
 # 📡 Endpoint: http://0.0.0.0:3000/mcp
 # 🔑 Mode: stateless
+# 🔐 Boond auth: OAuth2 (per-request Bearer from MCP client)
 ```
 
 **Variables d'environnement HTTP**
@@ -457,85 +461,79 @@ npx boondmanager-mcp-server
 | `MCP_HTTP_PORT` | `3000` | Port TCP |
 | `MCP_HTTP_PATH` | `/mcp` | Chemin HTTP de l'endpoint MCP |
 | `MCP_HTTP_STATEFUL` | `false` | `true` pour activer le mode stateful (session `Mcp-Session-Id`) |
-| `MCP_HTTP_BEARER_TOKEN` | _(vide)_ | Si defini, le serveur exige `Authorization: Bearer <token>` |
 | `MCP_HTTP_JSON_RESPONSE` | `false` | `true` pour forcer des reponses JSON (sans SSE) |
+| `MCP_HTTP_PUBLIC_URL` | _(derivee)_ | URL publique annoncee dans la discovery OAuth2 (`resource`) et le challenge `WWW-Authenticate`. Requise derriere un reverse proxy. |
 | `MCP_HTTP_SESSION_TTL_MS` | `1800000` (30 min) | En mode stateful, duree d'inactivite au-dela de laquelle une session est fermee. |
 | `MCP_HTTP_SESSION_SWEEP_INTERVAL_MS` | `300000` (5 min) | Frequence de balayage des sessions inactives. |
+| `MCP_HTTP_ALLOWED_HOSTS` | _(auto)_ | Liste blanche du header `Host` (anti DNS rebinding, CVE-2025-66414). `*` pour desactiver explicitement. |
+
+**Variables OAuth2 — discovery (toutes optionnelles)**
+
+| Variable | Defaut | Description |
+|----------|--------|-------------|
+| `BOOND_OAUTH_AUTHORIZATION_SERVER` | `https://ui.boondmanager.com` | Issuer de l'authorization server BoondManager, annonce dans `authorization_servers` |
+| `BOOND_OAUTH_SCOPES` | _(vide)_ | Scopes annonces dans `scopes_supported` (espace ou virgule). Vide = le client negocie directement avec Boond. |
 
 **Stateless (defaut)** : chaque requete HTTP POST est independante, idealement adapte a un gateway qui multiplexe plusieurs serveurs MCP. Aucune session n'est conservee cote serveur.
 
 **Stateful** : le serveur genere un `Mcp-Session-Id` a l'initialisation que le client doit renvoyer dans chaque requete suivante. Utile pour les clients MCP natifs qui beneficient du streaming SSE et des notifications serveur.
 
-#### Exemple : verifier l'endpoint
+#### Exemple : discovery + 401 challenge
 
 ```bash
-curl -s -X POST http://localhost:3000/mcp \
-  -H 'Content-Type: application/json' \
-  -H 'Accept: application/json, text/event-stream' \
-  -d '{
-    "jsonrpc": "2.0",
-    "id": 1,
-    "method": "initialize",
-    "params": {
-      "protocolVersion": "2025-06-18",
-      "capabilities": {},
-      "clientInfo": { "name": "curl", "version": "1.0" }
-    }
-  }'
+# Public, pas d'auth -> documente OU envoyer le user pour autoriser
+curl -s http://localhost:3000/.well-known/oauth-protected-resource | jq .
+# {
+#   "resource": "http://0.0.0.0:3000/mcp",
+#   "authorization_servers": ["https://ui.boondmanager.com"],
+#   "bearer_methods_supported": ["header"]
+# }
+
+# Appel MCP sans token -> 401 + WWW-Authenticate qui pointe vers la discovery
+curl -s -o /dev/null -w "%{http_code}\n%header{www-authenticate}\n" \
+  -X POST http://localhost:3000/mcp -d '{}'
+# 401
+# Bearer realm="http://0.0.0.0:3000/mcp", resource_metadata="http://0.0.0.0:3000/.well-known/oauth-protected-resource/mcp"
 ```
 
 #### Exemple : Claude Code via HTTP
 
+Avec un client MCP conforme a la spec MCP Authorization 2025-06-18, la decouverte OAuth est automatique :
+
 ```bash
-claude mcp add --transport http \
-  --header "Authorization: Bearer votre_token_local" \
-  boondmanager https://mcp.votre-domaine.com/mcp
-```
-
-#### Exemple : configuration `.mcp.json` HTTP
-
-```json
-{
-  "mcpServers": {
-    "boondmanager": {
-      "type": "http",
-      "url": "https://mcp.votre-domaine.com/mcp",
-      "headers": {
-        "Authorization": "Bearer ${MCP_HTTP_BEARER_TOKEN}"
-      }
-    }
-  }
-}
+claude mcp add --transport http boondmanager https://mcp.votre-domaine.com/mcp
+# Le client recoit le 401 + WWW-Authenticate, fetch la metadata, ouvre
+# le navigateur pour autoriser l'App BoondManager, puis re-emet la requete
+# avec le Bearer token recu.
 ```
 
 #### Exemple : Docker (image officielle GHCR)
 
-Une image Docker prete a l'emploi est publiee a chaque release sur GitHub Container Registry, multi-arch (`linux/amd64` + `linux/arm64`). Elle demarre par defaut en transport HTTP, sur le port 3000, sur l'interface `0.0.0.0`.
+Une image Docker prete a l'emploi est publiee a chaque release sur GitHub Container Registry, multi-arch (`linux/amd64` + `linux/arm64`). Elle demarre par defaut en transport HTTP, sur le port 3000, sur l'interface `0.0.0.0`. **Aucun volume, aucun secret a stocker** — le serveur est stateless par construction.
 
 ```bash
-docker run --rm -p 3000:3000 \
-  -e MCP_HTTP_BEARER_TOKEN=$(openssl rand -hex 32) \
-  -e BOOND_API_TOKEN=$BOOND_API_TOKEN \
+docker run -d --restart unless-stopped \
+  -p 127.0.0.1:3000:3000 \
+  -e MCP_HTTP_PUBLIC_URL=https://mcp.votre-domaine.com/mcp \
+  --name boondmanager-mcp \
   ghcr.io/fauguste/boondmanager-mcp-server:latest
 ```
 
 Tags disponibles : `:latest`, `:1`, `:1.5`, `:1.5.1` (la version exacte est recommandee pour la prod). Variables d'environnement supportees : voir [Configuration](#configuration) et [Transports](#transports).
 
-#### Exemple : Docker (image ad-hoc via npx)
+#### Exemple : docker-compose
 
-Si vous preferez ne pas utiliser l'image GHCR, le serveur peut tourner dans une image Node generique :
+Le repo embarque un `docker-compose.yml` pret a l'emploi : un seul service stateless, aucun volume, aucun secret cote serveur.
 
 ```bash
-docker run --rm -p 3000:3000 \
-  -e MCP_TRANSPORT=http \
-  -e MCP_HTTP_HOST=0.0.0.0 \
-  -e MCP_HTTP_BEARER_TOKEN=$(openssl rand -hex 32) \
-  -e BOOND_API_TOKEN=$BOOND_API_TOKEN \
-  node:22-alpine \
-  npx -y boondmanager-mcp-server
+# Optionnel : surcharger MCP_HTTP_PUBLIC_URL si fronted par un reverse proxy
+cp .env.example .env
+
+docker compose up -d
+docker compose logs -f mcp
 ```
 
-> **Securite** : en HTTP, les credentials BoondManager restent cote serveur (variables d'environnement du conteneur). Seul le token MCP (`MCP_HTTP_BEARER_TOKEN`) circule entre le client et le serveur. Derriere un reverse proxy, ajoutez TLS (HTTPS) et limitez l'acces reseau au gateway.
+> **Securite** : le serveur HTTP est stateless et ne stocke aucun secret BoondManager. Chaque utilisateur authentifie le serveur via son propre token OAuth2 (issu de sa propre App BoondManager), et toutes les actions sont attribuees a son identite dans l'audit log Boond. Derriere un reverse proxy : terminez TLS (HTTPS), forwardez l'en-tete `Authorization`, et reglez `MCP_HTTP_PUBLIC_URL` sur l'URL publique pour que la discovery soit coherente.
 
 ## Exemples d'utilisation
 
