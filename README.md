@@ -7,6 +7,8 @@
 [![Node.js](https://img.shields.io/node/v/boondmanager-mcp-server.svg)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue.svg)](https://www.typescriptlang.org/)
 [![MCP Registry](https://img.shields.io/badge/MCP-Registry-blue)](https://registry.modelcontextprotocol.io/)
+[![Docker Hub](https://img.shields.io/docker/v/fauguste/boondmanager-mcp-server?label=Docker%20Hub&logo=docker&color=2496ED)](https://hub.docker.com/r/fauguste/boondmanager-mcp-server)
+[![GHCR](https://img.shields.io/badge/GHCR-fauguste%2Fboondmanager--mcp--server-181717?logo=github)](https://github.com/fauguste/boondmanager-mcp-server/pkgs/container/boondmanager-mcp-server)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 Serveur MCP (Model Context Protocol) pour l'API BoondManager, permettant a Claude (Desktop, Cowork, Code) de rechercher, consulter, creer et modifier des enregistrements dans votre instance BoondManager.
@@ -507,19 +509,34 @@ claude mcp add --transport http boondmanager https://mcp.votre-domaine.com/mcp
 # avec le Bearer token recu.
 ```
 
-#### Exemple : Docker (image officielle GHCR)
+#### Exemple : Docker (image officielle)
 
-Une image Docker prete a l'emploi est publiee a chaque release sur GitHub Container Registry, multi-arch (`linux/amd64` + `linux/arm64`). Elle demarre par defaut en transport HTTP, sur le port 3000, sur l'interface `0.0.0.0`. **Aucun volume, aucun secret a stocker** — le serveur est stateless par construction.
+Une image Docker prete a l'emploi est publiee a chaque release sur deux registres miroirs, multi-arch (`linux/amd64` + `linux/arm64`) :
+
+| Registre | Image | Page |
+|---|---|---|
+| GitHub Container Registry | `ghcr.io/fauguste/boondmanager-mcp-server` | [github.com/fauguste/boondmanager-mcp-server/pkgs/container/boondmanager-mcp-server](https://github.com/fauguste/boondmanager-mcp-server/pkgs/container/boondmanager-mcp-server) |
+| Docker Hub | `docker.io/fauguste/boondmanager-mcp-server` | [hub.docker.com/r/fauguste/boondmanager-mcp-server](https://hub.docker.com/r/fauguste/boondmanager-mcp-server) |
+
+Memes digests, memes tags — choisissez celui qui s'aligne avec votre tooling. L'image demarre par defaut en transport HTTP, sur le port 3000, sur l'interface `0.0.0.0`. **Aucun volume, aucun secret a stocker** — le serveur est stateless par construction.
 
 ```bash
+# Via GHCR (authentification GitHub si registre prive)
 docker run -d --restart unless-stopped \
   -p 127.0.0.1:3000:3000 \
   -e MCP_HTTP_PUBLIC_URL=https://mcp.votre-domaine.com/mcp \
   --name boondmanager-mcp \
   ghcr.io/fauguste/boondmanager-mcp-server:latest
+
+# Ou via Docker Hub (anonyme)
+docker run -d --restart unless-stopped \
+  -p 127.0.0.1:3000:3000 \
+  -e MCP_HTTP_PUBLIC_URL=https://mcp.votre-domaine.com/mcp \
+  --name boondmanager-mcp \
+  fauguste/boondmanager-mcp-server:latest
 ```
 
-Tags disponibles : `:latest`, `:1`, `:1.5`, `:1.5.1` (la version exacte est recommandee pour la prod). Variables d'environnement supportees : voir [Configuration](#configuration) et [Transports](#transports).
+Tags disponibles sur les deux registres : `:latest`, `:X`, `:X.Y`, `:X.Y.Z` pour chaque release stable (la version exacte est recommandee pour la prod). Les **prereleases** (par exemple `:2.0.0-alpha`) sont publiees **uniquement sous leur tag pinne** — ni `:latest`, ni `:X`, ni `:X.Y` ne bougent. Variables d'environnement supportees : voir [Configuration](#configuration) et [Transports](#transports).
 
 #### Exemple : docker-compose
 
