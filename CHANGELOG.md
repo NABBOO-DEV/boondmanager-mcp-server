@@ -3,7 +3,7 @@
 All notable changes to this project will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [2.2.0] - 2026-06-05
+## [2.2.0] - 2026-06-08
 
 Restriction d'accès configurable par variables d'environnement : limiter les domaines exposés et/ou bloquer les écritures, sans modifier le code.
 
