@@ -3,6 +3,20 @@
 All notable changes to this project will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.6.1] - 2026-06-15
+
+Correctif de packaging : le bundle `.mcpb` passe de ~40 Mo à ~3 Mo et redevient installable sur les hôtes qui appliquent une limite de taille (Claude Cowork / Claude Desktop). Aucun changement de comportement des outils — toujours **175 outils, 11 prompts, 22 ressources**.
+
+### Fixed
+
+- **`.mcpb` de ~40 Mo silencieusement rejeté à l'installation** : la CI packageait le bundle après un `npm ci` complet, embarquant toutes les devDependencies dans `node_modules` (vitest, typescript, eslint, rolldown, lightningcss…) — inutiles au runtime mais ~37 Mo de poids mort. La release `release.yml` exécute désormais `npm prune --omit=dev` (après `npm publish`, car `prepublishOnly` relance `tsc`) avant `mcpb pack` ; le bundle tombe à ~3 Mo.
+- **`pino-pretty` déclaré en devDependency alors qu'il est requis au runtime** : `src/services/logger.ts` charge `pino-pretty` comme transport par défaut (sauf `LOG_FORMAT=json` ou `NODE_ENV=production`). En devDependency, il manquait dès qu'on n'embarquait pas tout le `node_modules` — donc le bundle allégé **et** le package npm (`npx boondmanager-mcp-server` chez un consommateur) crashaient au démarrage. Déplacé en `dependencies`.
+
+### Changed
+
+- `.mcpbignore` étendu pour exclure du `node_modules` embarqué les artefacts inutiles au runtime (`*.map`, `*.md`, dossiers `test/`/`tests/`/`__tests__/`/`examples/`).
+- Hook `prepare` rendu tolérant (`husky || true`) pour qu'un cycle npm déclenché par l'hôte n'échoue pas en l'absence de `.git`.
+
 ## [2.6.0] - 2026-06-15
 
 Les 5 outils de reporting acceptent enfin leurs vrais filtres par endpoint — une requête « filtrée » ne renvoie plus tout le périmètre autorisé. Merci @Antoine-Engibex pour la contribution.

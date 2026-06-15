@@ -75,6 +75,27 @@ jobs:
           echo "npm_tag=$NPM_TAG" >> "$GITHUB_OUTPUT"
           echo "Detected: version=$TAG_VERSION prerelease=$IS_PRERELEASE npm_tag=$NPM_TAG"
 
+      # npm publish runs BEFORE the prune below: `prepublishOnly` re-runs
+      # `tsc` (a devDependency), so the full dev tree must still be present.
+      - name: Publish to npm
+        # `--tag <npm_tag>` ensures prereleases land under e.g. `@alpha`
+        # rather than overwriting the default `latest` dist-tag and reaching
+        # users running `npm install boondmanager-mcp-server` without a tag.
+        run: npm publish --provenance --access public --tag "${{ steps.version.outputs.npm_tag }}"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # Strip devDependencies before packing — `mcpb pack` bundles the whole
+      # node_modules tree, so without this the .mcpb ships vitest/typescript/
+      # eslint/rolldown/lightningcss (~40 MB), none of which run at runtime.
+      # Cowork/Claude Desktop enforce a size limit on .mcpb extensions and a
+      # 40 MB bundle is silently rejected. After this prune the bundle is
+      # ~4 MB (prod deps only). pino-pretty is a runtime dependency (the
+      # logger loads it unless LOG_FORMAT=json), so it survives the prune.
+      # Must run AFTER npm publish (prepublishOnly needs tsc).
+      - name: Prune dev dependencies before packing
+        run: npm prune --omit=dev
+
       - name: Build MCPB bundle
         env:
           # Pin the bundler version — this step produces the distributed .mcpb
@@ -84,14 +105,6 @@ jobs:
         run: |
           TAG_VERSION="${GITHUB_REF#refs/tags/v}"
           npx --yes "@anthropic-ai/mcpb@${MCPB_CLI_VERSION}" pack . "boondmanager-mcp-server-v${TAG_VERSION}.mcpb"
-
-      - name: Publish to npm
-        # `--tag <npm_tag>` ensures prereleases land under e.g. `@alpha`
-        # rather than overwriting the default `latest` dist-tag and reaching
-        # users running `npm install boondmanager-mcp-server` without a tag.
-        run: npm publish --provenance --access public --tag "${{ steps.version.outputs.npm_tag }}"
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Extract release notes from CHANGELOG
         id: changelog
