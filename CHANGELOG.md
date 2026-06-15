@@ -3,6 +3,25 @@
 All notable changes to this project will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.6.0] - 2026-06-15
+
+Les 5 outils de reporting acceptent enfin leurs vrais filtres par endpoint — une requête « filtrée » ne renvoie plus tout le périmètre autorisé. Merci @Antoine-Engibex pour la contribution.
+
+### Fixed
+
+- **Filtres des 5 outils de reporting silencieusement ignorés** (#110) : `boond_reporting_companies/projects/resources/synthesis/production_plans` ne transmettaient que `startDate`/`endDate`/`keywords`/`page`/`pageSize` — tout autre `queryParameter` de la RAML était abandonné, donc un reporting « filtré » renvoyait l'intégralité du périmètre autorisé (même classe de bug que les filtres de positionnements corrigés en #107). Chaque endpoint reçoit désormais un schéma Zod `.strict()` dédié, modelé sur sa `search.raml` :
+  - companies : `companiesStates`, `companies[]`, `maxCompanies`, `showPercentage` (+ dates requises)
+  - projects : `projectTypes`, `projectStates`, `maxProjects`, `resources`/`projects`/`contacts`/`companies[]`
+  - resources : `reportingCategory`, `resourceTypes`, `resourceStates`, `period`, `maxResources`, ids d'entités
+  - synthesis : `reportingType`, `reportingCategory`, `period`, `compareIndicators` (+ `startDate` requis)
+  - production-plans : `positioningStates`, `positioningPeriod`, `showContracts` (+ dates requises)
+
+  Tous exposent en plus les filtres de périmètre partagés (`perimeterDynamic`/`perimeterManagers`/`perimeterAgencies`/`perimeterPoles`/`perimeterBusinessUnits`/`narrowPerimeter`, `periodDynamic`). Les schémas restant `.strict()`, un mauvais nom de filtre (ex. `agencies` au lieu de `perimeterAgencies`) est rejeté plutôt que silencieusement ignoré. Aucun nouvel outil (toujours **175**), catalogue inchangé.
+
+### Changed
+
+- Montée de versions des dépendances : image de base Node Docker (#112) et groupe de dev-dependencies (#111, 4 mises à jour).
+
 ## [2.5.0] - 2026-06-12
 
 Les positionnements deviennent pleinement pilotables (lecture réparée, mise à jour d'état, actions liées), et les instances aux dictionnaires personnalisés peuvent déclarer leurs libellés. Merci @Antoine-Engibex pour les quatre contributions de cette version.
