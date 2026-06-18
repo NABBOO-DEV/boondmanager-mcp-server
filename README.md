@@ -11,8 +11,18 @@
 [![GHCR](https://img.shields.io/badge/GHCR-fauguste%2Fboondmanager--mcp--server-181717?logo=github)](https://github.com/fauguste/boondmanager-mcp-server/pkgs/container/boondmanager-mcp-server)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
+**Installation 1-clic :**
+
 [![Add to Cursor](https://img.shields.io/badge/Add%20to-Cursor-000000?logo=cursor&logoColor=white)](https://cursor.com/install-mcp?name=boondmanager&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsImJvb25kbWFuYWdlci1tY3Atc2VydmVyIl19)
 [![Install in VS Code](https://img.shields.io/badge/Install-VS%20Code-0098FF?logo=visualstudiocode&logoColor=white)](https://insiders.vscode.dev/redirect/mcp/install?name=boondmanager&config=%7B%22command%22%3A%22npx%22%2C%22args%22%3A%5B%22-y%22%2C%22boondmanager-mcp-server%22%5D%7D)
+[![Install in VS Code Insiders](https://img.shields.io/badge/Install-VS%20Code%20Insiders-24bfa5?logo=visualstudiocode&logoColor=white)](https://insiders.vscode.dev/redirect/mcp/install?name=boondmanager&config=%7B%22command%22%3A%22npx%22%2C%22args%22%3A%5B%22-y%22%2C%22boondmanager-mcp-server%22%5D%7D&quality=insiders)
+[![Add to LM Studio](https://files.lmstudio.ai/deeplink/mcp-install-light.svg)](lmstudio://add_mcp?name=boondmanager&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsImJvb25kbWFuYWdlci1tY3Atc2VydmVyIl19)
+[![Add to Goose](https://img.shields.io/badge/Add%20to-Goose-26B5A4)](goose://extension?cmd=npx&arg=-y&arg=boondmanager-mcp-server&id=boondmanager&name=BoondManager&description=Serveur%20MCP%20BoondManager%20%28ERP%2FCRM%20ESN%29)
+
+[![Smithery](https://smithery.ai/badge/@fauguste/boondmanager-mcp-server)](https://smithery.ai/server/@fauguste/boondmanager-mcp-server)
+[![Glama](https://glama.ai/mcp/servers/fauguste/boondmanager-mcp-server/badge)](https://glama.ai/mcp/servers/fauguste/boondmanager-mcp-server)
+
+> Les boutons **LM Studio** et **Goose** utilisent leurs schémas d'application natifs (`lmstudio://`, `goose://`). GitHub n'autorise pas les liens à schéma non-HTTP : l'image s'affiche mais le clic peut être inopérant depuis github.com. Utilisez alors la configuration copier-coller des sections [Installation](#installation) ci-dessous.
 
 Serveur MCP (Model Context Protocol) pour l'API BoondManager, permettant a Claude (Desktop, Cowork, Code) de rechercher, consulter, creer et modifier des enregistrements dans votre instance BoondManager.
 
@@ -397,6 +407,32 @@ Cliquez sur le badge **[Install in VS Code](https://insiders.vscode.dev/redirect
 }
 ```
 
+### LM Studio
+
+Cliquez sur le badge **Add to LM Studio** en haut du README, ou dans LM Studio : **Program > Install > Edit `mcp.json`** et ajoutez :
+
+```json
+{
+  "mcpServers": {
+    "boondmanager": {
+      "command": "npx",
+      "args": ["-y", "boondmanager-mcp-server"],
+      "env": {
+        "BOOND_API_TOKEN": "votre_token_jwt"
+      }
+    }
+  }
+}
+```
+
+### Goose
+
+Cliquez sur le badge **Add to Goose** en haut du README (deeplink `goose://`), ou ajoutez une extension de type **STDIO** dans **Settings > Extensions > Add** avec la commande `npx -y boondmanager-mcp-server` et la variable d'environnement `BOOND_API_TOKEN`. En CLI :
+
+```bash
+goose session --with-extension "npx -y boondmanager-mcp-server"
+```
+
 ### Gemini CLI
 
 Le depot embarque un manifeste d'extension Gemini CLI (`gemini-extension.json`). Installez l'extension directement depuis GitHub :
@@ -649,6 +685,18 @@ docker compose logs -f mcp
 
 > **Securite** : le serveur HTTP est stateless et ne stocke aucun secret BoondManager. Chaque utilisateur authentifie le serveur via son propre token OAuth2 (issu de sa propre App BoondManager), et toutes les actions sont attribuees a son identite dans l'audit log Boond. Derriere un reverse proxy : terminez TLS (HTTPS), forwardez l'en-tete `Authorization`, et reglez `MCP_HTTP_PUBLIC_URL` sur l'URL publique pour que la discovery soit coherente.
 
+### Clients distants non-Claude (ChatGPT, OpenAI / Gemini Agents SDK)
+
+MCP est un protocole **agnostique du modele** : le meme endpoint HTTP/OAuth2 est consomme tel quel par tout hote compatible MCP, pas seulement Claude. **Aucun package ni build specifique a un LLM n'est requis** — il suffit de pointer l'hote sur votre URL `MCP_HTTP_PUBLIC_URL`.
+
+| Hote | Comment brancher le serveur |
+|------|-----------------------------|
+| **ChatGPT (connecteurs / Developer mode)** | Ajouter un connecteur MCP distant pointant sur l'URL HTTP ; l'OAuth2 est decouvert via la metadata `/.well-known/oauth-protected-resource`. |
+| **OpenAI Agents SDK** | Declarer un `HostedMCPTool` / serveur MCP distant avec l'URL HTTP et le flux OAuth2. |
+| **Google Gemini (Agents SDK / Vertex)** | Enregistrer le serveur MCP distant cote SDK ; en local, l'extension Gemini CLI (voir [Installation](#gemini-cli)) couvre le transport stdio. |
+
+Le contrat est identique a celui de Claude Code en HTTP (voir l'exemple `claude mcp add --transport http` ci-dessus) : seule la maniere de declarer le serveur cote client change.
+
 ## Exemples d'utilisation
 
 Une fois configure, vous pouvez demander a Claude :
@@ -758,7 +806,7 @@ boondmanager-mcp-server/
 
 - Les credentials BoondManager (JWT ou BasicAuth) ne transitent jamais via le protocole MCP -- ils sont configures en variables d'environnement cote serveur uniquement
 - En mode **stdio**, le serveur tourne en local, aucun port reseau n'est expose
-- En mode **streamable HTTP**, protegez l'endpoint avec `MCP_HTTP_BEARER_TOKEN` + TLS (HTTPS via reverse proxy) et restreignez l'acces reseau a votre gateway
+- En mode **streamable HTTP**, l'authentification est un **OAuth2 protected resource** : chaque requete MCP porte son propre `Authorization: Bearer <token>` (le serveur ne stocke aucun secret). Terminez TLS (HTTPS via reverse proxy), forwardez l'en-tete `Authorization`, reglez `MCP_HTTP_PUBLIC_URL` sur l'URL publique, et activez la protection anti DNS rebinding via `MCP_HTTP_ALLOWED_HOSTS`. Restreignez aussi l'acces reseau a votre gateway. Voir [docs/oauth.md](docs/oauth.md).
 - Compatible avec les exigences ISO 27001
 - L'API BoondManager est hebergee en France et conforme RGPD
 - Authentification BoondManager : JWT (recommande), BasicAuth, ou JWT construit automatiquement a partir des composants

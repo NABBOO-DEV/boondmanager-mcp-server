@@ -16,7 +16,9 @@ the reference for what gets pushed where on each release.
 | **LobeHub MCP marketplace** | [fauguste-boondmanager-mcp-server](https://lobehub.com/mcp/fauguste-boondmanager-mcp-server) | mirrors the MCP Registry (auto, ~24-48 h delay) | per release |
 | **Smithery** | [smithery.ai listing](https://smithery.ai/server/@fauguste/boondmanager-mcp-server) | reads `smithery.yaml` from this repo | per push to `main` |
 | **Gemini CLI extension** | `gemini extensions install https://github.com/fauguste/boondmanager-mcp-server` | reads `gemini-extension.json` from repo root | on install (reads the default branch) |
-| **Cursor / VS Code (install badges)** | deeplinks in `README.md` (no package) | static base64/url-encoded `npx` config baked into the badge URLs | manual (only if the `npx` invocation changes) |
+| **Install badges (Cursor, VS Code, VS Code Insiders, LM Studio, Goose)** | deeplinks in `README.md` (no package) | static base64/url-encoded `npx` config baked into the badge URLs | manual (only if the `npx` invocation changes) |
+| **Glama badge** | [glama.ai/mcp/servers/fauguste/boondmanager-mcp-server](https://glama.ai/mcp/servers/fauguste/boondmanager-mcp-server) | live badge image served by Glama (`/badge`); listing auto-mirrors the MCP Registry | auto |
+| **Smithery badge** | [smithery.ai/server/@fauguste/boondmanager-mcp-server](https://smithery.ai/server/@fauguste/boondmanager-mcp-server) | live badge image served by Smithery (`/badge/@…`) | auto |
 
 ## One-time setup (manual)
 
