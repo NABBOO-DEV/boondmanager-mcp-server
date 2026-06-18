@@ -3,6 +3,14 @@
 All notable changes to this project will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.6.2] - 2026-06-18
+
+Correctif de l'outil `boond_opportunities_create` (et `boond_opportunities_update`) qui échouait systématiquement. Aucun changement de catalogue — toujours **175 outils, 11 prompts, 22 ressources**.
+
+### Fixed
+
+- **`boond_opportunities_create` renvoyait toujours `422 — 1017 Missing required attribute /data/attributes/title`** ([#113](https://github.com/fauguste/boondmanager-mcp-server/issues/113)) : le champ `name` du schéma était transmis tel quel dans les attributs JSON:API, alors que l'API BoondManager attend le titre de l'opportunité sous `/data/attributes/title`. L'attribut `title` n'était donc jamais envoyé et la création échouait quel que soit l'input. Le handler mappe désormais `name` → `title` à la création et à la mise à jour (`boond_opportunities_update`). Lors d'un update, `title` reste omis si `name` n'est pas fourni, donc le titre existant n'est pas écrasé.
+
 ## [2.6.1] - 2026-06-15
 
 Correctif de packaging : le bundle `.mcpb` passe de ~40 Mo à ~3 Mo et redevient installable sur les hôtes qui appliquent une limite de taille (Claude Cowork / Claude Desktop). Aucun changement de comportement des outils — toujours **175 outils, 11 prompts, 22 ressources**.

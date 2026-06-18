@@ -120,8 +120,10 @@ export function registerOpportunityTools(server: McpServer): void {
   registerGetTool(server, OPTS);
 
   registerCreateTool(server, OPTS, OpportunityCreateSchema, (params) => {
-    const { companyId, contactId, ...attrs } = params;
-    const body = buildJsonApiBody("opportunity", attrs);
+    // The Boond API expects the opportunity name under `/data/attributes/title`,
+    // so the schema's `name` field must be mapped to `title` (see issue #113).
+    const { companyId, contactId, name, ...rest } = params;
+    const body = buildJsonApiBody("opportunity", { title: name, ...rest });
     const relationships: Record<string, unknown> = {};
     if (companyId) relationships.company = { data: { id: companyId, type: "company" } };
     if (contactId) relationships.contact = { data: { id: contactId, type: "contact" } };
@@ -132,8 +134,10 @@ export function registerOpportunityTools(server: McpServer): void {
   });
 
   registerUpdateTool(server, OPTS, OpportunityUpdateSchema, (params) => {
-    const { id, ...attrs } = params;
-    return buildJsonApiBody("opportunity", attrs, id as string);
+    // Same `name` → `title` mapping as create (issue #113). `title` stays
+    // undefined when `name` is omitted, so buildJsonApiBody drops it.
+    const { id, name, ...rest } = params;
+    return buildJsonApiBody("opportunity", { title: name, ...rest }, id as string);
   });
 
   registerDeleteTool(server, OPTS);
