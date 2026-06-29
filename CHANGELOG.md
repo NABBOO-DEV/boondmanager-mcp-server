@@ -3,6 +3,19 @@
 All notable changes to this project will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.8.0] - 2026-06-29
+
+Extension des capacités d'écriture (4 nouveaux outils `*_create`) et nouveau mode d'authentification statique pour le transport HTTP. Catalogue : **180 outils** (176 → 180), 11 prompts, 22 ressources.
+
+### Added
+
+- **Quatre nouveaux outils de création** ([#135](https://github.com/fauguste/boondmanager-mcp-server/pull/135)), complétant la couverture write des domaines de gestion :
+  - **`boond_deliveries_create`** : créer une prestation / livraison.
+  - **`boond_payments_create`** : créer un paiement.
+  - **`boond_provider_invoices_create`** : créer une facture fournisseur.
+  - **`boond_timesheets_create`** : créer une feuille de temps.
+- **Authentification HTTP statique** ([#135](https://github.com/fauguste/boondmanager-mcp-server/pull/135)) : nouvelle variable `BOOND_HTTP_STATIC_AUTH` (`true`/`1`/`yes`). Quand elle est activée, le transport HTTP utilise les credentials d'environnement (JWT statique, comme en stdio) au lieu d'exiger un `Authorization: Bearer` OAuth par requête. Pensé pour les déploiements mono-locataire, les pipelines CI et les passerelles internes (ex. Hermes) qui n'ont pas de flux OAuth. Le serveur refuse de démarrer (`exit 1`) si le mode est activé sans credentials (`BOOND_USER_TOKEN` + `BOOND_CLIENT_TOKEN` + `BOOND_CLIENT_KEY`, ou `BOOND_API_TOKEN`). Absente ou désactivée, le comportement reste le mode OAuth2 *protected resource* par défaut. Merci @DemeulemeesterxMaxime pour la contribution.
+
 ## [2.7.1] - 2026-06-26
 
 Correctif du `405 Method Not Allowed` sur la mise à jour des principales entités. Aucun changement de catalogue — toujours **176 outils, 11 prompts, 22 ressources**.
