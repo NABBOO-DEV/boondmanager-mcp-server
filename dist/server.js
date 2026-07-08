@@ -114,11 +114,28 @@ export function registerAll(server, policy) {
     registerAllPrompts(target, policy);
     registerAllResources(target);
 }
+/**
+ * Usage guidance surfaced to the model at `initialize` (MCP `instructions`).
+ * Encodes a "lazy pattern" so the model reaches for the cheapest correct path
+ * and never falls into N+1 loops for aggregates.
+ */
+const USAGE_INSTRUCTIONS = `Serveur BoondManager en LECTURE SEULE (aucune écriture possible : outils de lecture uniquement).
+
+Pattern paresseux — pour TOUTE demande de données Boond, procède dans cet ordre :
+
+1. OUTIL SIMPLE. Si un outil direct couvre le besoin (boond_<domaine>_search / boond_<domaine>_get, ou un reporting natif), utilise-le. C'est le cas par défaut pour lister/consulter des fiches.
+
+2. REQUÊTE SQL ENREGISTRÉE (ExtractBI). Dès que le besoin est un AGRÉGAT, un COMPTAGE, une JOINTURE ou un « X par Y » (ex. « candidats par responsable », « CA par société », « nombre de Y par mois »), NE fais PAS un appel par élément (anti-pattern N+1). À la place :
+   - boond_extractbi_list (filtre par mots-clés) pour trouver une requête existante ;
+   - éventuellement boond_extractbi_get pour vérifier son SQL ;
+   - boond_extractbi_run pour l'exécuter → résultat CSV agrégé côté serveur, en UN seul appel.
+
+3. PROPOSER D'EN CRÉER UNE. Si aucune requête enregistrée ne couvre le besoin, propose à l'utilisateur d'en créer une : fournis le SQL prêt à coller dans l'UI ExtractBI de BoondManager (les requêtes se créent/éditent côté Boond, pas via l'API). Ne retombe PAS sur du N+1 par défaut ; le N+1 (récupérer une relation fiche par fiche) reste un dernier recours explicitement assumé pour de petits volumes.`;
 export function createMcpServer() {
     const server = new McpServer({
         name: SERVER_NAME,
         version: SERVER_VERSION,
-    });
+    }, { instructions: USAGE_INSTRUCTIONS });
     // Operator-configured restrictions (env-driven). Absent config = full surface.
     registerAll(server, resolveAccessPolicy());
     return server;
