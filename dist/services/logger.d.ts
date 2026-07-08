@@ -7,15 +7,6 @@ import pino from "pino";
  * header, OAuth Bearer headers, and raw access tokens at one level of nesting.
  */
 export declare const REDACT_PATHS: string[];
-/**
- * Centralized structured logger. Use this instead of console.log/error for
- * all application logging — it provides timestamps, levels, and JSON output
- * (when LOG_FORMAT=json) that plays nicely with log aggregators.
- *
- * Example:
- *   logger.info({ sessionId: "abc", userId: 123 }, "Session initialized");
- *   logger.error({ err, endpoint: "/mcp" }, "HTTP transport error");
- */
 export declare const logger: pino.Logger<never, boolean>;
 /**
  * Generate a short correlation ID (8 hex chars) for tracing a single request

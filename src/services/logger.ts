@@ -43,22 +43,32 @@ function resolveLogLevel(): pino.Level {
  *   logger.info({ sessionId: "abc", userId: 123 }, "Session initialized");
  *   logger.error({ err, endpoint: "/mcp" }, "HTTP transport error");
  */
-export const logger = pino({
-  level: resolveLogLevel(),
-  redact: { paths: REDACT_PATHS, censor: "[Redacted]" },
-  // Human-readable (pretty) output in dev, JSON in prod. Override via LOG_FORMAT.
-  transport:
-    process.env.LOG_FORMAT === "json" || process.env.NODE_ENV === "production"
-      ? undefined
-      : {
-          target: "pino-pretty",
-          options: {
-            colorize: true,
-            translateTime: "SYS:standard",
-            ignore: "pid,hostname",
-          },
-        },
-});
+// READ-ONLY FORK (NABBOO-DEV): a stdio MCP server MUST keep stdout clean — it is
+// the JSON-RPC channel. Pino (and pino-pretty) default to stdout (fd 1), which
+// corrupts the protocol. We force ALL log output to stderr (fd 2) in both modes.
+function makeLogger(): pino.Logger {
+  const base = {
+    level: resolveLogLevel(),
+    redact: { paths: REDACT_PATHS, censor: "[Redacted]" },
+  };
+  if (process.env.LOG_FORMAT === "json" || process.env.NODE_ENV === "production") {
+    return pino(base, pino.destination(2)); // JSON -> stderr
+  }
+  return pino({
+    ...base,
+    transport: {
+      target: "pino-pretty",
+      options: {
+        colorize: true,
+        translateTime: "SYS:standard",
+        ignore: "pid,hostname",
+        destination: 2, // pretty -> stderr
+      },
+    },
+  });
+}
+
+export const logger = makeLogger();
 
 /**
  * Generate a short correlation ID (8 hex chars) for tracing a single request
