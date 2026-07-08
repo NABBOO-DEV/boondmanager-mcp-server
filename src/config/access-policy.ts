@@ -66,11 +66,6 @@ function parseList(raw: string | undefined): string[] {
     .filter((s) => s.length > 0);
 }
 
-function parseBoolean(raw: string | undefined): boolean {
-  const v = (raw ?? "").toLowerCase().trim();
-  return v === "1" || v === "true" || v === "yes";
-}
-
 /** Normalise a user-supplied domain to the canonical (dash, lowercase) form. */
 function normalizeDomain(domain: string): string {
   return domain.toLowerCase().trim().replace(/_/g, "-");
@@ -97,28 +92,6 @@ function normalizeAndValidateDomains(
   return out;
 }
 
-function validateOperations(items: string[], log: typeof logger): Set<Operation> {
-  const out = new Set<Operation>();
-  for (const raw of items) {
-    const op = raw.toLowerCase() as Operation;
-    if ((ALL_OPERATIONS as readonly string[]).includes(op)) {
-      out.add(op);
-    } else {
-      log.warn(
-        { value: raw },
-        `BOOND_MCP_OPERATIONS: unknown operation "${raw}" ignored (expected read/create/update/delete)`
-      );
-    }
-  }
-  // If the operator provided only invalid values, fall back to "all" rather
-  // than silently exposing zero tools (that would look like a broken server).
-  if (out.size === 0) {
-    log.warn("BOOND_MCP_OPERATIONS contained no valid operation; defaulting to all operations");
-    return new Set<Operation>(ALL_OPERATIONS);
-  }
-  return out;
-}
-
 /**
  * Build the effective access policy from the environment. Resilient: unknown
  * domains/operations are warned-and-ignored, never fatal.
@@ -135,21 +108,13 @@ export function resolveAccessPolicy(env: NodeJS.ProcessEnv = process.env): Acces
     allowItems.length > 0 ? normalizeAndValidateDomains(allowItems, known, "BOOND_MCP_DOMAINS", log) : null;
   const excludedDomains = normalizeAndValidateDomains(excludeItems, known, "BOOND_MCP_EXCLUDE_DOMAINS", log);
 
-  // --- Operations ---
-  const opItems = parseList(readEnv(env, "BOOND_MCP_OPERATIONS"));
-  const readOnlyShortcut = parseBoolean(readEnv(env, "BOOND_MCP_READ_ONLY"));
-
-  let operations: Set<Operation>;
-  if (opItems.length > 0) {
-    operations = validateOperations(opItems, log);
-    if (readOnlyShortcut) {
-      log.warn("Both BOOND_MCP_OPERATIONS and BOOND_MCP_READ_ONLY are set; BOOND_MCP_OPERATIONS takes precedence");
-    }
-  } else if (readOnlyShortcut) {
-    operations = new Set<Operation>(["read"]);
-  } else {
-    operations = new Set<Operation>(ALL_OPERATIONS);
-  }
+  // --- Operations: READ-ONLY FORK (NABBOO-DEV) hard invariant ----------------
+  // This fork NEVER exposes write tools. `operations` is hard-wired to {read},
+  // so withPolicy() never registers create/update/delete tools — and no env var
+  // (BOOND_MCP_OPERATIONS / BOOND_MCP_READ_ONLY) can re-enable them. The HTTP
+  // client (services/boond-client.ts) additionally refuses any non-GET request
+  // as an immutable backstop. Domain filtering (BOOND_MCP_DOMAINS) still applies.
+  const operations = new Set<Operation>(["read"]);
 
   const policy: AccessPolicy = { allowedDomains, excludedDomains, operations };
 

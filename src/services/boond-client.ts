@@ -527,6 +527,14 @@ export async function apiRequest(
   body?: unknown,
   queryParams?: Record<string, QueryValue>
 ): Promise<JsonApiResponse> {
+  // READ-ONLY FORK (NABBOO-DEV): immutable backstop. Refuse any non-GET method
+  // outright, so no write can ever reach BoondManager even if a write tool were
+  // somehow registered. This is the hard boundary the read-only policy leans on.
+  // Cast to string so TS does not narrow `method` to "GET" for the code below.
+  if ((method as string) !== "GET") {
+    throw new Error(`Read-only server: ${method} requests are not permitted (attempted ${method} ${path}).`);
+  }
+
   const { baseUrl, auth } = getConfig();
 
   const url = resolveApiUrl(baseUrl, path);
@@ -734,35 +742,12 @@ export async function apiDownload(path: string): Promise<DownloadedDocument> {
  * reference via the `fileUrl` field (Boond downloads it server-side), so the
  * MCP server never buffers file bytes.
  */
-export async function apiUploadForm(path: string, fields: Record<string, string>): Promise<JsonApiResponse> {
-  const { baseUrl, auth } = getConfig();
-  const url = resolveApiUrl(baseUrl, path);
-
-  const limiter = getRateLimiter();
-  if (limiter) await limiter.acquire();
-
-  const form = new FormData();
-  for (const [key, value] of Object.entries(fields)) {
-    form.set(key, value);
-  }
-
-  const authHeader = await auth();
-  // No Content-Type header: fetch derives the multipart boundary from FormData.
-  const response = await fetch(url.toString(), {
-    method: "POST",
-    headers: { [authHeader.name]: authHeader.value, Accept: "application/json" },
-    body: form,
-    signal: AbortSignal.timeout(resolveTimeoutMs()),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text().catch(() => "");
-    throw new Error(formatApiError(response.status, response.statusText, "POST", path, errorText));
-  }
-  if (response.status === 204 || response.headers.get("content-length") === "0") {
-    return { data: [] };
-  }
-  return (await response.json()) as JsonApiResponse;
+export async function apiUploadForm(path: string, _fields: Record<string, string>): Promise<JsonApiResponse> {
+  // READ-ONLY FORK (NABBOO-DEV): document upload is a write (POST). This fork
+  // never performs writes, so the entire upload path is removed. The function
+  // is kept only so the (unregistered, read-only-filtered) documents-upload tool
+  // still compiles; calling it always throws.
+  throw new Error(`Read-only server: document upload (POST ${path}) is not permitted.`);
 }
 
 export function buildSearchQuery(params: SearchParams): Record<string, QueryValue> {

@@ -1,5 +1,13 @@
 # BoondManager MCP Server
 
+> **⚠️ Fork NABBOO-DEV — READ-ONLY DUR.** Fork de [`fauguste/boondmanager-mcp-server`](https://github.com/fauguste/boondmanager-mcp-server) (v2.8.0) modifié pour être **strictement en lecture seule, de façon immuable** :
+> - `src/config/access-policy.ts` force `operations = {read}` quoi que dise l'environnement → les outils create/update/delete ne sont **jamais enregistrés** (impossible de les réactiver via `BOOND_MCP_OPERATIONS`/`BOOND_MCP_READ_ONLY`).
+> - `src/services/boond-client.ts` refuse toute requête HTTP ≠ GET (`apiRequest`) et tout upload (`apiUploadForm`) → **backstop dur** : aucune écriture ne peut atteindre BoondManager, même avec un compte qui a les droits d'écriture.
+>
+> Utilisé par `NABBOO-DEV/nabboo-boond` (paquet `nabboo-boond-mcp-readonly`, binaire `nabboo-boond-mcp`). Pour resync l'upstream : `git fetch upstream && git merge upstream/main` puis re-vérifier les 2 patches.
+
+---
+
 [![CI](https://github.com/fauguste/boondmanager-mcp-server/actions/workflows/ci.yml/badge.svg)](https://github.com/fauguste/boondmanager-mcp-server/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/fauguste/boondmanager-mcp-server/actions/workflows/codeql.yml/badge.svg)](https://github.com/fauguste/boondmanager-mcp-server/actions/workflows/codeql.yml)
 [![npm version](https://img.shields.io/npm/v/boondmanager-mcp-server.svg)](https://www.npmjs.com/package/boondmanager-mcp-server)
