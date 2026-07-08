@@ -119,6 +119,7 @@ export const REGISTERED_DOMAINS = [
     "planning-absences",
     "documents",
     "workflows",
+    "extractbi",
 ];
 // Tab names available on entities (matching actual API endpoints)
 export const ENTITY_TABS = {

@@ -36,4 +36,5 @@ export { registerReportingTools } from "./reporting.js";
 export { registerPlanningAbsenceTools } from "./planning-absences.js";
 export { registerDocumentTools } from "./documents.js";
 export { registerWorkflowTools } from "./workflows.js";
+export { registerExtractBiTools } from "./extractbi.js";
 //# sourceMappingURL=index.d.ts.map

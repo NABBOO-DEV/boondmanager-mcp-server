@@ -126,6 +126,7 @@ export const REGISTERED_DOMAINS = [
   "planning-absences",
   "documents",
   "workflows",
+  "extractbi",
 ] as const;
 
 export type DomainName = (typeof REGISTERED_DOMAINS)[number];

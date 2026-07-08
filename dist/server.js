@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { registerCandidateTools, registerResourceTools, registerContactTools, registerCompanyTools, registerOpportunityTools, registerActionTools, registerTimesheetTools, registerProjectTools, registerInvoiceTools, registerOrderTools, registerDeliveryTools, registerAbsenceTools, registerExpenseTools, registerProductTools, registerPositioningTools, registerPaymentTools, registerAdvantageTools, registerApplicationTools, registerContractTools, registerPurchaseTools, registerProviderInvoiceTools, registerAccountTools, registerAgencyTools, registerBusinessUnitTools, registerRoleTools, registerLogTools, registerNotificationTools, registerThreadTools, registerTodolistTools, registerFlagTools, registerCalendarTools, registerWebhookTools, registerValidationTools, registerPoleTools, registerReportingTools, registerPlanningAbsenceTools, registerDocumentTools, registerWorkflowTools, } from "./tools/index.js";
+import { registerCandidateTools, registerResourceTools, registerContactTools, registerCompanyTools, registerOpportunityTools, registerActionTools, registerTimesheetTools, registerProjectTools, registerInvoiceTools, registerOrderTools, registerDeliveryTools, registerAbsenceTools, registerExpenseTools, registerProductTools, registerPositioningTools, registerPaymentTools, registerAdvantageTools, registerApplicationTools, registerContractTools, registerPurchaseTools, registerProviderInvoiceTools, registerAccountTools, registerAgencyTools, registerBusinessUnitTools, registerRoleTools, registerLogTools, registerNotificationTools, registerThreadTools, registerTodolistTools, registerFlagTools, registerCalendarTools, registerWebhookTools, registerValidationTools, registerPoleTools, registerReportingTools, registerPlanningAbsenceTools, registerDocumentTools, registerWorkflowTools, registerExtractBiTools, } from "./tools/index.js";
 import { registerAllPrompts } from "./prompts/index.js";
 import { registerAllResources } from "./resources/index.js";
 import { resolveAccessPolicy, isDomainAllowed, withPolicy } from "./config/access-policy.js";
@@ -83,6 +83,7 @@ export const TOOL_REGISTRARS = [
     ["planning-absences", registerPlanningAbsenceTools],
     ["documents", registerDocumentTools],
     ["workflows", registerWorkflowTools],
+    ["extractbi", registerExtractBiTools],
 ];
 /**
  * Register the full (policy-filtered) tool/prompt/resource surface onto a

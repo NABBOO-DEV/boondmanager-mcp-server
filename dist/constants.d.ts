@@ -56,7 +56,7 @@ export declare const API_PATHS: {
     readonly reportingProductionPlans: "/reporting-production-plans";
     readonly documents: "/documents";
 };
-export declare const REGISTERED_DOMAINS: readonly ["candidates", "resources", "contacts", "companies", "opportunities", "actions", "timesheets", "projects", "invoices", "orders", "deliveries", "absences", "expenses", "products", "positionings", "payments", "advantages", "application", "contracts", "purchases", "provider-invoices", "accounts", "agencies", "business-units", "roles", "logs", "notifications", "threads", "todolists", "flags", "calendars", "webhooks", "validations", "poles", "reporting", "planning-absences", "documents", "workflows"];
+export declare const REGISTERED_DOMAINS: readonly ["candidates", "resources", "contacts", "companies", "opportunities", "actions", "timesheets", "projects", "invoices", "orders", "deliveries", "absences", "expenses", "products", "positionings", "payments", "advantages", "application", "contracts", "purchases", "provider-invoices", "accounts", "agencies", "business-units", "roles", "logs", "notifications", "threads", "todolists", "flags", "calendars", "webhooks", "validations", "poles", "reporting", "planning-absences", "documents", "workflows", "extractbi"];
 export type DomainName = (typeof REGISTERED_DOMAINS)[number];
 export declare const ENTITY_TABS: {
     readonly candidates: readonly ["information", "technical-data", "administrative", "actions", "positionings"];

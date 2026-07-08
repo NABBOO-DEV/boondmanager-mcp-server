@@ -41,6 +41,7 @@ import {
   registerPlanningAbsenceTools,
   registerDocumentTools,
   registerWorkflowTools,
+  registerExtractBiTools,
 } from "./tools/index.js";
 import { registerAllPrompts } from "./prompts/index.js";
 import { registerAllResources } from "./resources/index.js";
@@ -128,6 +129,7 @@ export const TOOL_REGISTRARS: ReadonlyArray<readonly [DomainName, (server: McpSe
     ["planning-absences", registerPlanningAbsenceTools],
     ["documents", registerDocumentTools],
     ["workflows", registerWorkflowTools],
+    ["extractbi", registerExtractBiTools],
   ];
 
 /**
