@@ -1,0 +1,226 @@
+import { ActionSearchSchema, ActionCreateSchema, ActionUpdateSchema, IdSchema } from "../schemas/index.js";
+import { apiRequest, buildSearchQuery, formatListResponse, formatDetailResponse } from "../services/boond-client.js";
+import { buildJsonApiBody, registerDeleteTool, MutationOutputSchema } from "./crud-factory.js";
+import { availableLabels, formatOverridesSummary, resolveLabel } from "../config/dictionary-overrides.js";
+/** Display labels for the five entities an action can be attached to. */
+const ACTION_ENTITY_LABELS = [
+    ["Contact", "contact"],
+    ["Candidat", "candidate"],
+    ["Ressource", "resource"],
+    ["Opportunité", "opportunity"],
+    ["Projet", "project"],
+];
+/**
+ * Append the custom typeOf labels (BOOND_DICTIONARY_OVERRIDES) to the create
+ * tool description, as one compact block. Without overrides the base
+ * description is returned unchanged (byte-for-byte).
+ */
+function buildActionCreateDescription(base) {
+    const parts = [];
+    for (const [label, entity] of ACTION_ENTITY_LABELS) {
+        const summary = formatOverridesSummary("action", entity);
+        if (summary !== null)
+            parts.push(`${label} : ${summary}`);
+    }
+    if (parts.length === 0)
+        return base;
+    return `${base}\nLibellés personnalisés acceptés pour typeOf (résolus automatiquement) : ${parts.join(" / ")}`;
+}
+export function registerActionTools(server) {
+    // Search actions
+    server.registerTool("boond_actions_search", {
+        title: "Rechercher des actions",
+        description: `Recherche des actions (appels, emails, RDV, notes) dans BoondManager avec filtres optionnels par candidat, ressource, contact ou société.
+
+Args:
+  - keywords (string, optional): Termes de recherche
+  - candidateId, resourceId, contactId, companyId (string, optional): Filtrer par entité liée
+  - page, pageSize: Pagination
+
+Returns: Liste des actions correspondantes.`,
+        inputSchema: ActionSearchSchema,
+        annotations: {
+            readOnlyHint: true,
+            destructiveHint: false,
+            idempotentHint: true,
+            openWorldHint: true,
+        },
+    }, async (params) => {
+        const query = buildSearchQuery(params);
+        const response = await apiRequest("/actions", "GET", undefined, query);
+        return {
+            content: [{ type: "text", text: formatListResponse(response, "action") }],
+        };
+    });
+    // Get action details
+    server.registerTool("boond_actions_get", {
+        title: "Détails d'une action",
+        description: `Récupère les détails d'une action par son ID.`,
+        inputSchema: IdSchema,
+        annotations: {
+            readOnlyHint: true,
+            destructiveHint: false,
+            idempotentHint: true,
+            openWorldHint: false,
+        },
+    }, async (params) => {
+        const response = await apiRequest(`/actions/${params.id}`);
+        return {
+            content: [{ type: "text", text: formatDetailResponse(response) }],
+        };
+    });
+    // Create action
+    server.registerTool("boond_actions_create", {
+        title: "Créer une action",
+        description: buildActionCreateDescription(`Crée une nouvelle action (appel, email, RDV, note) dans BoondManager, rattachée à un contact, candidat, ressource, opportunité ou projet (relation dependsOn, obligatoire).
+
+Args:
+  - typeOf (number, requis): ID numérique du type d'action (dictionnaire setting.action.*, via boond_application_dictionary)
+  - title, text (string, optional): Titre et contenu de l'action
+  - startDate, endDate (string, optional): Dates ISO avec timezone (ex: 2026-06-05T10:00:00+0200)
+  - contactId | candidateId | resourceId | opportunityId | projectId (string, un requis): Entité de rattachement
+  - companyId (string, optional): Société, uniquement en complément d'un contactId
+  - positioningId (string, optional): Positionnement à lier — requis par l'API pour les types d'action liés aux positionnements (ex. RQ)
+
+Returns: L'action créée avec son ID.`),
+        inputSchema: ActionCreateSchema,
+        annotations: {
+            readOnlyHint: false,
+            destructiveHint: false,
+            idempotentHint: false,
+            openWorldHint: false,
+        },
+    }, async (params) => {
+        const { candidateId, resourceId, contactId, opportunityId, projectId, companyId, positioningId, ...attrs } = params;
+        // The API requires a polymorphic `dependsOn` relationship pointing to the
+        // entity the action is attached to (422 "Missing required relationship"
+        // otherwise). `company` is only accepted alongside a contact `dependsOn`.
+        const dependsOnCandidates = [
+            { id: contactId, type: "contact" },
+            { id: candidateId, type: "candidate" },
+            { id: resourceId, type: "resource" },
+            { id: opportunityId, type: "opportunity" },
+            { id: projectId, type: "project" },
+        ];
+        const dependsOn = dependsOnCandidates.find((c) => c.id);
+        if (!dependsOn) {
+            return {
+                isError: true,
+                content: [
+                    {
+                        type: "text",
+                        text: "❌ L'API BoondManager exige de rattacher l'action à une entité (dependsOn). Fournissez l'un des paramètres : contactId, candidateId, resourceId, opportunityId ou projectId. (companyId seul ne suffit pas : une action ne peut pas être rattachée directement à une société, passez par un contact.)",
+                    },
+                ],
+            };
+        }
+        // Resolve a custom typeOf label (BOOND_DICTIONARY_OVERRIDES) to its
+        // numeric dictionary id. The labels are declared per attached entity
+        // (setting.action.<entity>), hence the resolution after dependsOn.
+        if (typeof attrs.typeOf === "string") {
+            const resolved = resolveLabel("action", dependsOn.type, attrs.typeOf);
+            if (resolved === undefined) {
+                const labels = availableLabels("action", dependsOn.type);
+                const hint = labels.length > 0
+                    ? `Libellés personnalisés disponibles pour ${dependsOn.type} : ${labels.join(", ")}. Sinon, utilisez l'ID numérique du dictionnaire (setting.action.*, via boond_application_dictionary).`
+                    : `Aucun libellé personnalisé n'est configuré pour ${dependsOn.type} : utilisez l'ID numérique du dictionnaire (setting.action.*, via boond_application_dictionary), ou déclarez vos libellés via BOOND_DICTIONARY_OVERRIDES (voir docs/dictionary-overrides.md).`;
+                return {
+                    isError: true,
+                    content: [
+                        {
+                            type: "text",
+                            text: `❌ Type d'action inconnu : "${attrs.typeOf}". ${hint}`,
+                        },
+                    ],
+                };
+            }
+            attrs.typeOf = resolved;
+        }
+        const body = buildJsonApiBody("action", attrs);
+        const relationships = {
+            dependsOn: { data: { id: dependsOn.id, type: dependsOn.type } },
+        };
+        if (companyId && dependsOn.type === "contact") {
+            relationships.company = { data: { id: companyId, type: "company" } };
+        }
+        // Some action types (those bound to positionings in the Boond setup, e.g.
+        // "RQ"-style interviews) are rejected with a 422 "1002 - Wrong or missing
+        // attribute (/data/relationships/positioning)" unless a positioning
+        // relationship is sent. The official bodyPost.json schema does not
+        // document it, but the API enforces it for those types.
+        if (positioningId) {
+            relationships.positioning = { data: { id: positioningId, type: "positioning" } };
+        }
+        body.data.relationships = relationships;
+        const response = await apiRequest("/actions", "POST", body);
+        const entity = Array.isArray(response.data) ? response.data[0] : response.data;
+        return {
+            content: [
+                {
+                    type: "text",
+                    text: `✅ Action créée avec succès.\nID: ${entity?.id}\n\n${formatDetailResponse(response)}`,
+                },
+            ],
+        };
+    });
+    // Update action — PUT (PATCH renvoie 405 sur /actions/{id})
+    server.registerTool("boond_actions_update", {
+        title: "Modifier une action",
+        description: `Met à jour une action existante dans BoondManager (PUT partiel, seuls les champs fournis sont modifiés).
+
+⚠️ Aucune relation n'est envoyée : le rattachement (dependsOn), le positionnement et la synchronisation calendrier (event Outlook/Teams, invités) sont préservés. Idéal pour ajouter un compte-rendu sans casser l'agenda — contrairement à delete + recreate qui supprime l'événement.
+
+Args:
+  - id (string, requis): ID de l'action à modifier
+  - typeOf (number, optional): Nouveau type (ID numérique du dictionnaire setting.action.*)
+  - title (string, optional): Nouveau titre
+  - text (string, optional): Nouveau contenu / notes (remplace l'existant, pas d'ajout)
+  - startDate, endDate (string, optional): Dates ISO avec timezone (ex: 2026-06-05T10:00:00+0200)
+
+Returns: L'action mise à jour.`,
+        inputSchema: ActionUpdateSchema,
+        outputSchema: MutationOutputSchema,
+        annotations: {
+            readOnlyHint: false,
+            destructiveHint: false,
+            idempotentHint: true,
+            openWorldHint: false,
+        },
+    }, async (params) => {
+        const { id, ...attrs } = params;
+        if (!Object.values(attrs).some((v) => v !== undefined)) {
+            return {
+                isError: true,
+                content: [
+                    {
+                        type: "text",
+                        text: "❌ Aucun champ à mettre à jour. Fournissez au moins l'un de : typeOf, title, text, startDate, endDate.",
+                    },
+                ],
+            };
+        }
+        // Attributs uniquement (pas de relationships) → préserve dependsOn /
+        // positioning et la synchro calendrier. PATCH renverrait 405.
+        const body = buildJsonApiBody("action", attrs, id);
+        const response = await apiRequest(`/actions/${id}`, "PUT", body);
+        const entity = Array.isArray(response.data) ? response.data[0] : response.data;
+        return {
+            content: [
+                {
+                    type: "text",
+                    text: `✅ Action #${id} mise à jour.\n\n${formatDetailResponse(response)}`,
+                },
+            ],
+            structuredContent: {
+                id: String(id),
+                ...(entity?.type !== undefined ? { type: String(entity.type) } : {}),
+            },
+        };
+    });
+    // Delete action — via la factory pour l'élicitation de confirmation + structuredContent
+    registerDeleteTool(server, { entityName: "action", entityNamePlural: "actions", apiPath: "/actions", prefix: "boond_actions" }, {
+        title: "Supprimer une action",
+        description: `Supprime une action de BoondManager. ⚠️ Action irréversible. Si le client MCP supporte l'élicitation, une confirmation est demandée avant la suppression.`,
+    });
+}
+//# sourceMappingURL=actions.js.map

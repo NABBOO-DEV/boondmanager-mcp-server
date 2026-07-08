@@ -1,0 +1,163 @@
+// BoondManager API constants
+export const DEFAULT_BASE_URL = "https://ui.boondmanager.com/api";
+export const CHARACTER_LIMIT = 50000;
+export const DEFAULT_PAGE_SIZE = 30;
+export const MAX_PAGE_SIZE = 500;
+// Cap the page number on search tools (openWorldHint) to prevent runaway
+// iterations. At 500 results/page, page 100 = 50k records — well beyond
+// typical interactive exploration. The model can refine filters instead.
+export const MAX_SEARCH_PAGE = 100;
+// Max size of a document returned inline by boond_documents_get. Base64
+// inflates the payload by ~33% and everything lands in the model context, so
+// anything beyond this is refused with a clear message instead of silently
+// flooding the conversation.
+export const MAX_DOCUMENT_BYTES = 5 * 1024 * 1024;
+// HTTP client defaults
+// Timeout applied to every BoondManager API request. Overridable via
+// BOOND_HTTP_TIMEOUT_MS to handle slow tenants or long reporting queries.
+export const DEFAULT_HTTP_TIMEOUT_MS = 30_000;
+// Retry policy for transient failures. Override via BOOND_HTTP_MAX_RETRIES,
+// BOOND_HTTP_RETRY_BASE_MS, BOOND_HTTP_RETRY_MAX_MS. Set MAX_RETRIES to 0 to
+// disable retries entirely.
+export const DEFAULT_HTTP_MAX_RETRIES = 2;
+export const DEFAULT_HTTP_RETRY_BASE_MS = 200;
+export const DEFAULT_HTTP_RETRY_MAX_MS = 5_000;
+// Client-side rate limit (token bucket). Modest defaults: invisible during
+// interactive use, but cap pathological loops before BoondManager 429s us.
+// Override via BOOND_HTTP_RATE_LIMIT_RPS / BOOND_HTTP_RATE_LIMIT_BURST.
+// Set RPS to 0 to disable rate limiting entirely.
+export const DEFAULT_HTTP_RATE_LIMIT_RPS = 10;
+export const DEFAULT_HTTP_RATE_LIMIT_BURST = 20;
+// API paths
+export const API_PATHS = {
+    candidates: "/candidates",
+    resources: "/resources",
+    contacts: "/contacts",
+    companies: "/companies",
+    opportunities: "/opportunities",
+    actions: "/actions",
+    projects: "/projects",
+    invoices: "/invoices",
+    orders: "/orders",
+    deliveries: "/deliveries",
+    deliveriesGroupments: "/deliveries-groupments",
+    absences: "/absences",
+    absencesReports: "/absences-reports",
+    expenses: "/expenses",
+    expensesReports: "/expenses-reports",
+    products: "/products",
+    positionings: "/positionings",
+    payments: "/payments",
+    advantages: "/advantages",
+    application: "/application",
+    timesReports: "/times-reports",
+    contracts: "/contracts",
+    purchases: "/purchases",
+    providerInvoices: "/provider-invoices",
+    accounts: "/accounts",
+    agencies: "/agencies",
+    businessUnits: "/business-units",
+    roles: "/roles",
+    logs: "/logs",
+    notifications: "/notifications",
+    threads: "/threads",
+    todolists: "/todolists",
+    flags: "/flags",
+    calendars: "/calendars",
+    webhooks: "/webhooks",
+    validations: "/validations",
+    poles: "/poles",
+    planningAbsences: "/planning-absences",
+    reportingCompanies: "/reporting-companies",
+    reportingProjects: "/reporting-projects",
+    reportingResources: "/reporting-resources",
+    reportingSynthesis: "/reporting-synthesis",
+    reportingProductionPlans: "/reporting-production-plans",
+    documents: "/documents",
+};
+// Canonical list of tool domains exposed by the server, in registration order.
+// Domain names use dashes; the matching tool-name prefix replaces them with
+// underscores (e.g. `provider-invoices` -> `boond_provider_invoices_*`).
+// Lives here (not in server.ts) so the access-policy layer can validate
+// configured domains without importing server.ts (avoids an import cycle).
+export const REGISTERED_DOMAINS = [
+    "candidates",
+    "resources",
+    "contacts",
+    "companies",
+    "opportunities",
+    "actions",
+    "timesheets",
+    "projects",
+    "invoices",
+    "orders",
+    "deliveries",
+    "absences",
+    "expenses",
+    "products",
+    "positionings",
+    "payments",
+    "advantages",
+    "application",
+    "contracts",
+    "purchases",
+    "provider-invoices",
+    "accounts",
+    "agencies",
+    "business-units",
+    "roles",
+    "logs",
+    "notifications",
+    "threads",
+    "todolists",
+    "flags",
+    "calendars",
+    "webhooks",
+    "validations",
+    "poles",
+    "reporting",
+    "planning-absences",
+    "documents",
+    "workflows",
+];
+// Tab names available on entities (matching actual API endpoints)
+export const ENTITY_TABS = {
+    candidates: ["information", "technical-data", "administrative", "actions", "positionings"],
+    resources: [
+        "information",
+        "technical-data",
+        "administrative",
+        "advantages",
+        "actions",
+        "positionings",
+        "projects",
+        "times-reports",
+        "expenses-reports",
+        "absences-reports",
+    ],
+    contacts: ["information", "actions", "opportunities", "projects", "orders", "invoices"],
+    companies: [
+        "information",
+        "contacts",
+        "actions",
+        "opportunities",
+        "projects",
+        "orders",
+        "invoices",
+        "purchases",
+        "provider-invoices",
+    ],
+    opportunities: ["information", "actions", "positionings", "projects", "simulation"],
+    projects: [
+        "information",
+        "actions",
+        "simulation",
+        "deliveries-groupments",
+        "orders",
+        "purchases",
+        "productivity",
+    ],
+    invoices: ["information", "actions", "billable-items"],
+    orders: ["information", "actions", "invoices"],
+};
+//# sourceMappingURL=constants.js.map

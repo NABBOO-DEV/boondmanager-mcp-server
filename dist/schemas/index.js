@@ -1,0 +1,1439 @@
+import { z } from "zod";
+import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, MAX_SEARCH_PAGE } from "../constants.js";
+import { appendOverridesToDescription, resolveLabel } from "../config/dictionary-overrides.js";
+// Common search schema
+export const SearchSchema = z
+    .object({
+    keywords: z.string().optional().describe("Mots-clés de recherche (nom, email, compétences...)"),
+    page: z
+        .number()
+        .int()
+        .min(1)
+        .max(MAX_SEARCH_PAGE)
+        .default(1)
+        .describe(`Numéro de page (défaut: 1, max: ${MAX_SEARCH_PAGE})`),
+    pageSize: z
+        .number()
+        .int()
+        .min(1)
+        .max(MAX_PAGE_SIZE)
+        .default(DEFAULT_PAGE_SIZE)
+        .describe(`Nombre de résultats par page (max: ${MAX_PAGE_SIZE}, défaut: ${DEFAULT_PAGE_SIZE})`),
+})
+    .strict();
+// ---- Reusable filter field helpers ----
+// IMPORTANT: input field names below MUST match the BoondManager API query parameter names
+// exactly (e.g., perimeterManagers, resourceStates, opportunityStates). buildSearchQuery
+// passes them through as `key[]=value` for arrays. See https://doc.boondmanager.com/api-externe/
+const pageField = z
+    .number()
+    .int()
+    .min(1)
+    .max(MAX_SEARCH_PAGE)
+    .default(1)
+    .describe(`Numéro de page (défaut: 1, max: ${MAX_SEARCH_PAGE})`);
+const pageSizeField = z
+    .number()
+    .int()
+    .min(1)
+    .max(MAX_PAGE_SIZE)
+    .default(DEFAULT_PAGE_SIZE)
+    .describe(`Nombre de résultats par page (max: ${MAX_PAGE_SIZE}, défaut: ${DEFAULT_PAGE_SIZE})`);
+const sortField = z.string().optional().describe("Champ de tri (ex: lastName, firstName, updateDate)");
+const orderField = z.enum(["asc", "desc"]).optional().describe("Ordre de tri (asc/desc)");
+const intArray = (doc) => z.array(z.number().int()).optional().describe(doc);
+const fieldsField = z
+    .array(z.string())
+    .optional()
+    .describe("Projection côté client : liste d'attributs JSON:API à afficher pour chaque résultat " +
+    "(ex: ['title', 'updateDate', 'numberOfActiveProjects']). Réduit fortement la taille de la réponse. " +
+    "Absent = résumé standard (nom, email, ville, statut...). Les noms inconnus sont ignorés.");
+const strArray = (doc) => z.array(z.string()).optional().describe(doc);
+// Shared `tools` (technologies/skills) filter. Centralised so every entity
+// search exposes the same `#AND#` semantics to the model — previously the
+// description ranged from the full explanation (resources) to a bare
+// "IDs d'outils." (opportunities), so the model only learned about `#AND#`
+// on some endpoints.
+const toolsFilterField = strArray("IDs d'outils/technos (dictionnaire setting.tool). Logique OU par défaut. " +
+    "Pour ET, ajouter '#AND#' en 1er élément: tools=['#AND#','12','34'].");
+// Action timestamps: ISO 8601 with timezone, e.g. 2026-06-05T10:00:00+0200.
+// Accepts the colon-less (+0200) and colon (+02:00) offset styles, an optional
+// fractional-seconds part, and a trailing Z. The timezone is optional so the
+// API can apply the account default. Surfaces a malformed value at the schema
+// boundary instead of as an opaque 422.
+const actionDateTimeRegex = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?([+-]\d{2}:?\d{2}|Z)?$/;
+// Shared "perimeter" filters available on every entity search (from RAML trait `searchable`).
+// These are the CORRECT filters for "my team / my agency / my N-1" — NOT the old `mainManagers`.
+const perimeterManagersField = intArray("IDs des managers (ressources). Conserve les entités dont le responsable est l'un de ces managers. " +
+    "Pour 'mon équipe / N-1 d'une personne X', passer [X_id]. Obtenir son propre ID via boond_application_current_user.");
+const perimeterAgenciesField = intArray("IDs d'agences. Conserve les entités dont le responsable appartient à ces agences.");
+const perimeterPolesField = intArray("IDs de pôles. Conserve les entités dont le responsable appartient à ces pôles.");
+const perimeterBusinessUnitsField = intArray("IDs de business units. Conserve les entités dont le responsable appartient à ces BU.");
+const perimeterDynamicField = z
+    .array(z.enum(["data", "agencies", "poles", "businessUnits", "managers"]))
+    .optional()
+    .describe("Périmètre dynamique relatif à l'utilisateur courant (raccourci sans avoir à connaître son propre ID). " +
+    "Valeurs : 'data' (mes propres données), 'managers' (mon équipe / mes N-1), 'agencies' (mes agences), " +
+    "'poles' (mes pôles), 'businessUnits' (mes BU). Combinable.");
+const narrowPerimeterField = z
+    .boolean()
+    .optional()
+    .describe("Si true, jointure ET entre les filtres `perimeter*` (au lieu de OU par défaut).");
+const startDateField = z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional()
+    .describe("Date de début (YYYY-MM-DD), à utiliser avec `period`.");
+const endDateField = z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional()
+    .describe("Date de fin (YYYY-MM-DD), à utiliser avec `period`.");
+// ---- Resource search schema (collaborateurs internes) ----
+// Source: https://doc.boondmanager.com/api-externe/raml-build/resources/resources/search.raml
+export const ResourceSearchSchema = z
+    .object({
+    keywords: z
+        .string()
+        .optional()
+        .describe("Mots-clés (par défaut, recherche dans CV + dossier technique). Pour cibler un champ précis, " +
+        "fournir aussi `keywordsType` (ex: lastName, firstName, fullName, emails, title, titleSkills, phones, reference)."),
+    keywordsType: z
+        .enum([
+        "resumeTd",
+        "lastName",
+        "firstName",
+        "fullName",
+        "strictFullName",
+        "emails",
+        "title",
+        "titleSkills",
+        "phones",
+        "reference",
+        "resume",
+        "td",
+    ])
+        .optional()
+        .describe("Champ ciblé par `keywords`. Défaut: 'resumeTd' (CV + dossier technique). " +
+        "Pour 'fullName' utiliser `keywords = 'NOM#PRENOM'`."),
+    perimeterManagers: perimeterManagersField,
+    perimeterAgencies: perimeterAgenciesField,
+    perimeterPoles: perimeterPolesField,
+    perimeterBusinessUnits: perimeterBusinessUnitsField,
+    perimeterDynamic: perimeterDynamicField,
+    narrowPerimeter: narrowPerimeterField,
+    resourceStates: intArray("IDs d'états de ressource (dictionnaire setting.state.resource via boond_application_dictionary)."),
+    excludeResourceStates: intArray("IDs d'états de ressource à EXCLURE."),
+    resourceTypes: intArray("IDs de types de ressource (dictionnaire setting.typeOf.resource)."),
+    excludeResourceTypes: intArray("IDs de types de ressource à EXCLURE."),
+    activityAreas: strArray("IDs de secteurs d'activité (dictionnaire setting.activityArea)."),
+    expertiseAreas: strArray("IDs de domaines d'expertise (dictionnaire setting.expertiseArea)."),
+    tools: toolsFilterField,
+    experiences: intArray("IDs de niveaux d'expérience (dictionnaire setting.experience)."),
+    trainings: strArray("IDs de formations (dictionnaire setting.training)."),
+    mobilityAreas: strArray("IDs de zones de mobilité (dictionnaire setting.mobilityArea)."),
+    languages: strArray("Langues parlées au format `langueId|niveauId` (dictionnaires setting.languageSpoken et setting.languageLevel). Ex: ['anglais|courant']."),
+    flags: intArray("IDs de tags (drapeaux) attachés à la ressource."),
+    period: z
+        .string()
+        .optional()
+        .describe("Champ temporel pour filtrer par période. Valeurs courantes: 'available' (disponibilité), " +
+        "'working' (en mission hors interne), 'workingAll', 'absent', 'idle', 'hired', 'left', " +
+        "'employed', 'unemployed', 'updated', 'arrival', 'birthday', 'seniority', 'present', " +
+        "'noAction'/'withActions'/'withoutActions'/'withAbsences'/'withoutAbsences'. " +
+        "À combiner avec `startDate` + `endDate`."),
+    startDate: startDateField,
+    endDate: endDateField,
+    providerCompanies: intArray("IDs de sociétés sous-traitantes (filtre pour ressources externes)."),
+    coordinates: z
+        .string()
+        .optional()
+        .describe("Coordonnées GPS 'latitude,longitude' pour recherche géographique. À combiner avec `geoDistance`."),
+    location: z
+        .string()
+        .optional()
+        .describe("Adresse texte (ville, etc.) pour recherche géographique. À combiner avec `geoDistance`."),
+    geoDistance: z
+        .number()
+        .int()
+        .min(5)
+        .max(200)
+        .optional()
+        .describe("Rayon en km pour la recherche géographique (5-200). Requis si `coordinates` ou `location` est fourni."),
+    excludeManager: z.boolean().optional().describe("Si true, ne retourne que les ressources sans compte manager."),
+    shields: z
+        .array(z.enum(["uncomplete", "minimum", "complete"]))
+        .optional()
+        .describe("Niveau de complétude des champs conditionnels."),
+    sort: sortField,
+    order: orderField,
+    page: pageField,
+    pageSize: pageSizeField,
+    fields: fieldsField,
+})
+    .strict();
+// ---- Candidate search schema ----
+// Source: https://doc.boondmanager.com/api-externe/raml-build/resources/candidates/search.raml
+export const CandidateSearchSchema = z
+    .object({
+    keywords: z
+        .string()
+        .optional()
+        .describe("Mots-clés (par défaut, recherche dans CV + dossier technique). Combinable avec `keywordsType`."),
+    keywordsType: z
+        .enum([
+        "resumeTd",
+        "lastName",
+        "firstName",
+        "fullName",
+        "strictFullName",
+        "emails",
+        "title",
+        "titleSkills",
+        "phones",
+        "reference",
+        "resume",
+        "td",
+    ])
+        .optional()
+        .describe("Champ ciblé par `keywords` (défaut: 'resumeTd')."),
+    perimeterManagers: perimeterManagersField,
+    perimeterAgencies: perimeterAgenciesField,
+    perimeterPoles: perimeterPolesField,
+    perimeterBusinessUnits: perimeterBusinessUnitsField,
+    perimeterDynamic: perimeterDynamicField,
+    perimeterManagersType: z
+        .enum(["main", "hr"])
+        .optional()
+        .describe("Type de responsable visé par `perimeterManagers`: 'main' (Main Manager) ou 'hr' (HR Manager)."),
+    narrowPerimeter: narrowPerimeterField,
+    candidateStates: intArray("IDs d'états de candidat (dictionnaire setting.state.candidate via boond_application_dictionary)."),
+    candidateTypes: intArray("IDs de types de candidat (dictionnaire setting.typeOf.resource)."),
+    contractTypes: intArray("IDs de types de contrat recherchés (dictionnaire setting.typeOf.contract)."),
+    availabilityTypes: intArray("IDs de types de disponibilité (dictionnaire setting.availability)."),
+    activityAreas: strArray("IDs de secteurs d'activité (dictionnaire setting.activityArea)."),
+    expertiseAreas: strArray("IDs de domaines d'expertise."),
+    tools: toolsFilterField,
+    experiences: intArray("IDs de niveaux d'expérience."),
+    trainings: strArray("IDs de formations."),
+    mobilityAreas: strArray("IDs de zones de mobilité."),
+    languages: strArray("Langues au format `langueId|niveauId` (ex: ['anglais|courant'])."),
+    evaluations: strArray("IDs d'évaluations."),
+    sources: strArray("IDs de sources de recrutement (dictionnaire setting.source)."),
+    flags: intArray("IDs de tags."),
+    period: z
+        .string()
+        .optional()
+        .describe("Filtre temporel : 'created', 'updated', 'available', " +
+        "'noAction'/'withActions'/'withoutActions'. À combiner avec `startDate` + `endDate`."),
+    startDate: startDateField,
+    endDate: endDateField,
+    providerCompanies: intArray("IDs de sociétés sous-traitantes."),
+    coordinates: z.string().optional().describe("Coordonnées GPS 'lat,lon'. Requiert `geoDistance`."),
+    location: z.string().optional().describe("Adresse texte. Requiert `geoDistance`."),
+    geoDistance: z.number().int().min(5).max(200).optional().describe("Rayon km (5-200)."),
+    shields: z
+        .array(z.enum(["uncomplete", "minimum", "complete"]))
+        .optional()
+        .describe("Niveau de complétude."),
+    sort: sortField,
+    order: orderField,
+    page: pageField,
+    pageSize: pageSizeField,
+    fields: fieldsField,
+})
+    .strict();
+// ---- Contact search schema ----
+// Source: https://doc.boondmanager.com/api-externe/raml-build/resources/contacts/search.raml
+export const ContactSearchSchema = z
+    .object({
+    keywords: z
+        .string()
+        .optional()
+        .describe("Mots-clés (défaut: nom + prénom + société + fonction + périmètre technique). " +
+        "Combinable avec `keywordsType`."),
+    keywordsType: z
+        .enum([
+        "default",
+        "lastName",
+        "firstName",
+        "fullName",
+        "strictFullName",
+        "companyFullName",
+        "emails",
+        "phones",
+        "socialNetworks",
+    ])
+        .optional()
+        .describe("Champ ciblé. Défaut: 'default'. Pour 'fullName' utiliser `keywords = 'NOM#PRENOM'`. " +
+        "Pour 'companyFullName' utiliser `keywords = 'CSOCid#NOM#PRENOM'`."),
+    perimeterManagers: perimeterManagersField,
+    perimeterAgencies: perimeterAgenciesField,
+    perimeterPoles: perimeterPolesField,
+    perimeterBusinessUnits: perimeterBusinessUnitsField,
+    perimeterDynamic: perimeterDynamicField,
+    narrowPerimeter: narrowPerimeterField,
+    states: intArray("IDs d'états de contact (dictionnaire setting.state.contact)."),
+    companyStates: intArray("IDs d'états des sociétés rattachées (dictionnaire setting.state.company)."),
+    typesOf: intArray("IDs de types de contact (dictionnaire setting.typeOf.contact). " +
+        "⚠️ Le paramètre s'appelle `typesOf` (avec un 's'), PAS `typeOf`."),
+    origins: strArray("IDs d'origines (dictionnaire setting.origin)."),
+    activityAreas: strArray("IDs de secteurs d'activité de la société."),
+    expertiseAreas: strArray("IDs de domaines d'expertise de la société."),
+    tools: toolsFilterField,
+    influencers: intArray("IDs de contacts influenceurs."),
+    flags: intArray("IDs de tags."),
+    period: z
+        .string()
+        .optional()
+        .describe("Filtre temporel : 'created', 'updated', 'noAction'/'withActions'/'withoutActions'. " +
+        "À combiner avec `startDate` + `endDate`."),
+    startDate: startDateField,
+    endDate: endDateField,
+    completeness: strArray("Filtre par complétude des champs au format `fieldId:mode` (fieldId: email/phone/socialNetworks ; " +
+        "mode: empty/filled). Logique OU par défaut, '#AND#' en 1er pour ET. Ex: ['email:empty','phone:empty']."),
+    shields: z
+        .array(z.enum(["uncomplete", "minimum", "complete"]))
+        .optional()
+        .describe("Niveau de complétude."),
+    sort: sortField,
+    order: orderField,
+    page: pageField,
+    pageSize: pageSizeField,
+    fields: fieldsField,
+})
+    .strict();
+// ---- Company search schema ----
+// Source: https://doc.boondmanager.com/api-externe/raml-build/resources/companies/search.raml
+export const CompanySearchSchema = z
+    .object({
+    keywords: z
+        .string()
+        .optional()
+        .describe("Mots-clés (défaut: nom + ville + pays + expertise + informations). Combinable avec `keywordsType`."),
+    keywordsType: z
+        .enum(["default", "name", "phones", "emails", "socialNetworks"])
+        .optional()
+        .describe("Champ ciblé par `keywords`. Défaut: 'default'."),
+    perimeterManagers: perimeterManagersField,
+    perimeterAgencies: perimeterAgenciesField,
+    perimeterPoles: perimeterPolesField,
+    perimeterBusinessUnits: perimeterBusinessUnitsField,
+    perimeterDynamic: perimeterDynamicField,
+    narrowPerimeter: narrowPerimeterField,
+    states: intArray("IDs d'états de société (dictionnaire setting.state.company)."),
+    expertiseAreas: strArray("IDs de domaines d'expertise (dictionnaire setting.expertiseArea)."),
+    origins: strArray("IDs d'origines (dictionnaire setting.origin)."),
+    influencers: intArray("IDs d'influenceurs."),
+    flags: intArray("IDs de tags."),
+    period: z
+        .string()
+        .optional()
+        .describe("Filtre temporel : 'created', 'updated', 'noAction'/'withActions'/'withoutActions'. " +
+        "À combiner avec `startDate` + `endDate`."),
+    startDate: startDateField,
+    endDate: endDateField,
+    shields: z
+        .array(z.enum(["uncomplete", "minimum", "complete"]))
+        .optional()
+        .describe("Niveau de complétude."),
+    sort: sortField,
+    order: orderField,
+    page: pageField,
+    pageSize: pageSizeField,
+    fields: fieldsField,
+})
+    .strict();
+// ---- Opportunity search schema ----
+// Source: https://doc.boondmanager.com/api-externe/raml-build/resources/opportunities/search.raml
+export const OpportunitySearchSchema = z
+    .object({
+    keywords: z
+        .string()
+        .optional()
+        .describe("Mots-clés. Pour cibler par ID préfixé : 'AOnnn' (opportunité), 'CSOCnnn' (société), " +
+        "'CCONnnn' (contact), 'CANDnnn' (candidat), 'COMPnnn' (ressource), 'PRODnnn' (produit). " +
+        "Sinon recherche plein texte sur titre/société."),
+    perimeterManagers: perimeterManagersField,
+    perimeterAgencies: perimeterAgenciesField,
+    perimeterPoles: perimeterPolesField,
+    perimeterBusinessUnits: perimeterBusinessUnitsField,
+    perimeterDynamic: perimeterDynamicField,
+    perimeterManagersType: z
+        .enum(["main", "hr"])
+        .optional()
+        .describe("Type de responsable visé par `perimeterManagers` (main/hr)."),
+    narrowPerimeter: narrowPerimeterField,
+    opportunityStates: intArray("IDs d'états d'opportunité (dictionnaire setting.state.opportunity)."),
+    opportunityTypes: strArray("IDs de types d'opportunité (dictionnaire setting.typeOf.project)."),
+    positioningStates: strArray("IDs d'états de positionnement, ou 'none' pour les opportunités sans positionnement."),
+    expertiseAreas: strArray("IDs de domaines d'expertise."),
+    activityAreas: strArray("IDs de secteurs d'activité."),
+    tools: toolsFilterField,
+    places: strArray("IDs de zones (dictionnaire setting.mobilityArea)."),
+    durations: intArray("IDs de durées (dictionnaire setting.duration)."),
+    origins: strArray("IDs d'origines."),
+    flags: intArray("IDs de tags."),
+    period: z
+        .string()
+        .optional()
+        .describe("Filtre temporel : 'created' (création), 'started', 'closingDate' (date de closing), " +
+        "'updated', 'updatedPositioning', 'noAction'/'withActions'/'withoutActions'. " +
+        "À combiner avec `startDate` + `endDate`."),
+    startDate: startDateField,
+    endDate: endDateField,
+    shields: z
+        .array(z.enum(["uncomplete", "minimum", "complete"]))
+        .optional()
+        .describe("Niveau de complétude."),
+    sort: sortField,
+    order: orderField,
+    page: pageField,
+    pageSize: pageSizeField,
+    fields: fieldsField,
+})
+    .strict();
+// ---- Project search schema ----
+// Source: https://doc.boondmanager.com/api-externe/raml-build/resources/projects/search.raml
+export const ProjectSearchSchema = z
+    .object({
+    keywords: z
+        .string()
+        .optional()
+        .describe("Mots-clés. Pour cibler par ID préfixé : 'PRJnnn' (projet), 'CSOCnnn' (société), " +
+        "'CCONnnn' (contact), 'AOnnn' (opportunité), 'COMPnnn' (ressource), 'CTRnnn' (contrat)."),
+    perimeterManagers: perimeterManagersField,
+    perimeterAgencies: perimeterAgenciesField,
+    perimeterPoles: perimeterPolesField,
+    perimeterBusinessUnits: perimeterBusinessUnitsField,
+    perimeterDynamic: perimeterDynamicField,
+    narrowPerimeter: narrowPerimeterField,
+    projectStates: intArray("IDs d'états de projet (dictionnaire setting.state.project)."),
+    projectTypes: intArray("IDs de types de projet (dictionnaire setting.typeOf.project)."),
+    companies: intArray("IDs de sociétés clientes : projets rattachés à ces sociétés."),
+    expertiseAreas: strArray("IDs de domaines d'expertise."),
+    activityAreas: strArray("IDs de secteurs d'activité."),
+    flags: intArray("IDs de tags."),
+    period: z
+        .string()
+        .optional()
+        .describe("Filtre temporel : 'running' (en cours), 'created', 'started', 'stopped', 'closed', 'updated', " +
+        "'hasAdditionalDataOrPurchase'. À combiner avec `startDate` + `endDate`."),
+    startDate: startDateField,
+    endDate: endDateField,
+    sort: sortField,
+    order: orderField,
+    page: pageField,
+    pageSize: pageSizeField,
+    fields: fieldsField,
+})
+    .strict();
+// BoondManager entity ids are numeric. Constraining the schema to digits
+// (rather than an open `z.string()`) prevents a caller from smuggling path
+// segments, traversal sequences (`..`), or query syntax (`?`, `#`) into the
+// id, which would otherwise be interpolated raw into the API path. See the
+// defense-in-depth guard in boond-client.ts (`assertSafeApiPath`).
+export const EntityIdSchema = z.string().regex(/^\d+$/, "L'identifiant BoondManager doit être numérique");
+// Tab segments are also interpolated into the path; restrict them to a small
+// safe alphabet (letters and hyphens, e.g. `technical-data`).
+const TabSchema = z.string().regex(/^[a-zA-Z][a-zA-Z-]*$/, "Onglet invalide");
+// ID param schema
+export const IdSchema = z
+    .object({
+    id: EntityIdSchema.describe("Identifiant unique de l'entité BoondManager (numérique)"),
+})
+    .strict();
+// ID + tab param schema
+export const IdTabSchema = z
+    .object({
+    id: EntityIdSchema.describe("Identifiant unique de l'entité (numérique)"),
+    tab: TabSchema.optional().describe("Onglet spécifique à récupérer (information, technical, financial, actions, contracts, documents)"),
+})
+    .strict();
+// ---- Dictionary-override-aware `state` field ----
+// Accepts the usual numeric dictionary id, plus a custom label when the
+// operator configured BOOND_DICTIONARY_OVERRIDES (see docs/dictionary-overrides.md).
+// IMPORTANT: the label is resolved inside `z.preprocess`, i.e. at PARSE time,
+// not at schema definition time -- so overrides injected after this module is
+// imported (tests, late env) are honoured. Unknown labels are left as-is so
+// the integer validation fails with an explicit error.
+export const stateField = (entity, baseDescription) => z
+    .preprocess((value) => {
+    if (typeof value === "string") {
+        const resolved = resolveLabel("state", entity, value);
+        if (resolved !== undefined)
+            return resolved;
+    }
+    return value;
+}, z.coerce.number().int())
+    .optional()
+    .describe(appendOverridesToDescription(baseDescription, "state", entity));
+// ---- Candidate schemas ----
+export const CandidateCreateSchema = z
+    .object({
+    firstName: z.string().min(1).describe("Prénom du candidat"),
+    lastName: z.string().min(1).describe("Nom de famille du candidat"),
+    email1: z.string().email().optional().describe("Email principal"),
+    phone1: z.string().optional().describe("Téléphone principal"),
+    city: z.string().optional().describe("Ville"),
+    country: z.string().optional().describe("Pays"),
+    title: z.string().optional().describe("Titre du poste / fonction"),
+    state: stateField("candidate", "État du candidat (0=en cours, 1=placé, 2=archivé...)"),
+    mainSkills: z.string().optional().describe("Compétences principales (texte libre)"),
+    note: z.string().optional().describe("Notes / commentaires"),
+})
+    .strict();
+export const PositioningUpdateSchema = z
+    .object({
+    id: z.string().min(1).describe("ID du positionnement \u00e0 modifier"),
+    state: z
+        .number()
+        .int()
+        .min(0)
+        .optional()
+        .describe("\u00c9tat du positionnement : ID num\u00e9rique du dictionnaire setting.state.positioning"),
+    stateReasonTypeOf: z
+        .number()
+        .int()
+        .optional()
+        .describe("Motif d'\u00e9tat : ID num\u00e9rique du type de motif (stateReason.typeOf)"),
+    stateReasonDetail: z.string().optional().describe("Motif d'\u00e9tat : d\u00e9tail libre (stateReason.detail)"),
+    startDate: z.string().optional().describe("Date de d\u00e9but (YYYY-MM-DD, ou cha\u00eene vide pour effacer)"),
+    endDate: z.string().optional().describe("Date de fin (YYYY-MM-DD, ou cha\u00eene vide pour effacer)"),
+    informationComments: z.string().max(250).optional().describe("Commentaires (max 250 caract\u00e8res)"),
+})
+    .strict();
+export const CandidateUpdateSchema = z
+    .object({
+    id: z.string().min(1).describe("ID du candidat à modifier"),
+    firstName: z.string().optional().describe("Prénom"),
+    lastName: z.string().optional().describe("Nom"),
+    email1: z.string().email().optional().describe("Email principal"),
+    phone1: z.string().optional().describe("Téléphone"),
+    city: z.string().optional().describe("Ville"),
+    country: z.string().optional().describe("Pays"),
+    title: z.string().optional().describe("Titre / fonction"),
+    state: stateField("candidate", "État du candidat"),
+    mainSkills: z.string().optional().describe("Compétences principales"),
+    note: z.string().optional().describe("Notes"),
+})
+    .strict();
+// ---- Resource schemas ----
+export const ResourceCreateSchema = z
+    .object({
+    firstName: z.string().min(1).describe("Prénom de la ressource/collaborateur"),
+    lastName: z.string().min(1).describe("Nom de famille"),
+    email1: z.string().email().optional().describe("Email principal"),
+    phone1: z.string().optional().describe("Téléphone"),
+    city: z.string().optional().describe("Ville"),
+    country: z.string().optional().describe("Pays"),
+    title: z.string().optional().describe("Titre / poste"),
+    state: stateField("resource", "État de la ressource"),
+    note: z.string().optional().describe("Notes"),
+})
+    .strict();
+export const ResourceUpdateSchema = z
+    .object({
+    id: z.string().min(1).describe("ID de la ressource à modifier"),
+    firstName: z.string().optional().describe("Prénom"),
+    lastName: z.string().optional().describe("Nom"),
+    email1: z.string().email().optional().describe("Email principal"),
+    phone1: z.string().optional().describe("Téléphone"),
+    city: z.string().optional().describe("Ville"),
+    country: z.string().optional().describe("Pays"),
+    title: z.string().optional().describe("Titre / poste"),
+    state: stateField("resource", "État"),
+    note: z.string().optional().describe("Notes"),
+})
+    .strict();
+// ---- Resource technical-data (DT) write schema ----
+// Source: spec issue #79. PUT /resources/{id}/technical-data with type=resource.
+const technicalDataToolItemSchema = z
+    .object({
+    tool: z
+        .string()
+        .min(1)
+        .describe("Slug de l'outil (ex: 'aws', 'snowflake', 'microsoftazure'). Voir dictionnaire setting.tool."),
+    level: z.number().int().min(1).max(4).describe("Niveau de maîtrise (1 = débutant, 4 = expert)."),
+})
+    .strict();
+const technicalDataLanguageItemSchema = z
+    .object({
+    language: z.string().min(1).describe("Langue (ex: 'Anglais', 'Espagnol')."),
+    level: z.enum(["scolaire", "intermediaire", "courant", "bilingue", "maternel"]).describe("Niveau parlé."),
+})
+    .strict();
+export const ResourceTechnicalDataUpdateSchema = z
+    .object({
+    id: z.string().min(1).describe("ID de la ressource dont le dossier technique est mis à jour."),
+    mode: z
+        .enum(["merge", "replace"])
+        .default("merge")
+        .describe("'merge' (défaut) enrichit le DT sans rien écraser. 'replace' remplace intégralement chaque champ fourni."),
+    title: z.string().optional().describe("Titre / poste actuel."),
+    summary: z.string().optional().describe("Résumé / synthèse du parcours."),
+    skills: z.string().optional().describe("Compétences libres, séparées par virgule (ex: 'Python, AWS, GCP')."),
+    experience: z.number().int().min(0).optional().describe("Années d'expérience."),
+    training: z.string().optional().describe("Formations / parcours académique."),
+    expertiseAreas: z.array(z.string()).optional().describe("Domaines d'expertise (texte libre, ex: 'Banque')."),
+    activityAreas: z.array(z.string()).optional().describe("Secteurs d'activité."),
+    tools: z.array(technicalDataToolItemSchema).optional().describe("Outils maîtrisés avec niveau (1-4)."),
+    languages: z.array(technicalDataLanguageItemSchema).optional().describe("Langues parlées avec niveau."),
+    diplomas: z
+        .array(z.string())
+        .optional()
+        .describe("Diplômes (texte libre, ex: 'DUT Informatique - IUT Bordeaux (2016)')."),
+})
+    .strict();
+// ---- Reference (DT experience) schemas ----
+// Validated live against the BoondManager API on 2026-05-20: references are NOT a
+// standalone REST entity. They're sub-objects embedded in the resource's DT (the
+// `attributes.references` array returned by `/resources/{id}/technical-data`).
+// All CRUD on references therefore goes through `PUT /resources/{id}/technical-data`
+// with the full `references` array.
+//
+// API quirks learned from probing:
+// - `description` is REQUIRED for any new reference (1017 otherwise)
+// - `startMonth` / `endMonth` accept int 1..12 OR string without leading zero ("5")
+//   — "05" is rejected with 1002. We normalize to int via `z.coerce.number()`.
+// - `startYear` / `endYear` accept int or string YYYY — coerced to int.
+const referenceMonth = z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(12)
+    .describe("Mois (1-12). Accepte int ou string ('5'). ⚠️ '05' avec leading zero est rejeté par l'API Boond.");
+const referenceYear = z.coerce
+    .number()
+    .int()
+    .min(1900)
+    .max(2100)
+    .describe("Année (ex: 2024). Accepte int ou string '2024'.");
+export const ReferenceCreateSchema = z
+    .object({
+    resourceId: z.string().min(1).describe("ID de la ressource à laquelle rattacher la référence."),
+    title: z.string().min(1).describe("Intitulé du poste."),
+    company: z.string().min(1).describe("Société / employeur."),
+    description: z
+        .string()
+        .min(1)
+        .describe("Description / missions / réalisations. ⚠️ Requis côté API Boond (1017 sans)."),
+    location: z.string().optional().describe("Lieu (ville)."),
+    startMonth: referenceMonth.optional(),
+    startYear: referenceYear.optional(),
+    endMonth: referenceMonth.optional(),
+    endYear: referenceYear.optional(),
+    skills: z.string().optional().describe("Compétences mobilisées (texte libre, séparées par virgule)."),
+})
+    .strict();
+export const ReferenceUpdateSchema = z
+    .object({
+    resourceId: z
+        .string()
+        .min(1)
+        .describe("ID de la ressource portant la référence (les references sont embarquées dans le DT)."),
+    referenceId: z.string().min(1).describe("ID de la référence à modifier."),
+    title: z.string().optional().describe("Intitulé du poste."),
+    company: z.string().optional().describe("Société / employeur."),
+    description: z.string().optional().describe("Description / missions / réalisations."),
+    location: z.string().optional().describe("Lieu (ville)."),
+    startMonth: referenceMonth.optional(),
+    startYear: referenceYear.optional(),
+    endMonth: referenceMonth.optional(),
+    endYear: referenceYear.optional(),
+    skills: z.string().optional().describe("Compétences mobilisées."),
+})
+    .strict();
+export const ReferenceIdSchema = z
+    .object({
+    resourceId: z
+        .string()
+        .min(1)
+        .describe("ID de la ressource portant la référence (les references sont embarquées dans le DT)."),
+    referenceId: z.string().min(1).describe("ID de la référence à supprimer."),
+})
+    .strict();
+// ---- Contact schemas ----
+export const ContactCreateSchema = z
+    .object({
+    firstName: z.string().min(1).describe("Prénom du contact"),
+    lastName: z.string().min(1).describe("Nom de famille"),
+    email1: z.string().email().optional().describe("Email principal"),
+    phone1: z.string().optional().describe("Téléphone"),
+    city: z.string().optional().describe("Ville"),
+    country: z.string().optional().describe("Pays"),
+    title: z.string().optional().describe("Titre / fonction"),
+    companyId: z.string().optional().describe("ID de la société associée"),
+    note: z.string().optional().describe("Notes"),
+})
+    .strict();
+export const ContactUpdateSchema = z
+    .object({
+    id: z.string().min(1).describe("ID du contact à modifier"),
+    firstName: z.string().optional().describe("Prénom"),
+    lastName: z.string().optional().describe("Nom"),
+    email1: z.string().email().optional().describe("Email"),
+    phone1: z.string().optional().describe("Téléphone"),
+    city: z.string().optional().describe("Ville"),
+    title: z.string().optional().describe("Titre / fonction"),
+    note: z.string().optional().describe("Notes"),
+})
+    .strict();
+// ---- Company schemas ----
+export const CompanyCreateSchema = z
+    .object({
+    name: z.string().min(1).describe("Nom de la société"),
+    email1: z.string().email().optional().describe("Email de la société"),
+    phone1: z.string().optional().describe("Téléphone"),
+    city: z.string().optional().describe("Ville"),
+    country: z.string().optional().describe("Pays"),
+    website: z.string().optional().describe("Site web"),
+    siret: z.string().optional().describe("Numéro SIRET"),
+    state: stateField("company", "État de la société"),
+    note: z.string().optional().describe("Notes"),
+})
+    .strict();
+export const CompanyUpdateSchema = z
+    .object({
+    id: z.string().min(1).describe("ID de la société à modifier"),
+    name: z.string().optional().describe("Nom"),
+    email1: z.string().email().optional().describe("Email"),
+    phone1: z.string().optional().describe("Téléphone"),
+    city: z.string().optional().describe("Ville"),
+    country: z.string().optional().describe("Pays"),
+    website: z.string().optional().describe("Site web"),
+    siret: z.string().optional().describe("Numéro SIRET"),
+    state: stateField("company", "État"),
+    note: z.string().optional().describe("Notes"),
+})
+    .strict();
+// ---- Opportunity schemas ----
+// Writable fields shared by create and update. The attribute/relationship
+// names mirror the official RAML (schemas/opportunities/information.json):
+//  - `note` → /data/attributes/description (the API has no `note` attribute,
+//    so the old direct pass-through was silently dropped — see issue #124)
+//  - `typeOf`, `criteria`, `expertiseArea`, `turnoverEstimatedExcludingTax`
+//    are plain attributes
+//  - `companyId`/`contactId`/`poleId`/`hrManagerId`/`mainManagerId`/`agencyId`
+//    become JSON:API relationships (resource types: company, contact, pole,
+//    resource, resource, agency)
+const opportunityWritableShape = {
+    typeOf: z.coerce
+        .number()
+        .int()
+        .min(1)
+        .optional()
+        .describe("Type d'opportunité : ID numérique du dictionnaire setting.typeOf.project (ex: 1, 3), via boond_application_dictionary"),
+    companyId: z.string().optional().describe("ID de la société cliente (relation company)"),
+    contactId: z.string().optional().describe("ID du contact associé (relation contact)"),
+    state: stateField("opportunity", "État de l'opportunité"),
+    startDate: z.string().optional().describe("Date de début prévue (YYYY-MM-DD ou 'immediate')"),
+    endDate: z.string().optional().describe("Date de fin prévue (YYYY-MM-DD)"),
+    note: z
+        .string()
+        .max(65000)
+        .optional()
+        .describe("Description de l'opportunité (mappée sur /data/attributes/description)"),
+    criteria: z
+        .string()
+        .max(5000)
+        .optional()
+        .describe("Critères / compétences recherchées (texte libre). Alimente le matching de boond_workflow_candidats_pour_opportunite."),
+    expertiseArea: z
+        .string()
+        .optional()
+        .describe("Domaine d'expertise : ID du dictionnaire setting.expertiseArea (via boond_application_dictionary)"),
+    turnoverEstimatedExcludingTax: z.coerce.number().optional().describe("Chiffre d'affaires estimé HT (montant)"),
+    poleId: z.string().optional().describe("ID du pôle (relation pole)"),
+    hrManagerId: z.string().optional().describe("ID de la ressource responsable RH (relation hrManager)"),
+    mainManagerId: z
+        .string()
+        .optional()
+        .describe("ID de la ressource responsable principal / commercial (relation mainManager)"),
+    agencyId: z.string().optional().describe("ID de l'agence (relation agency)"),
+};
+export const OpportunityCreateSchema = z
+    .object({
+    name: z.string().min(1).describe("Nom / titre de l'opportunité"),
+    ...opportunityWritableShape,
+})
+    .strict();
+export const OpportunityUpdateSchema = z
+    .object({
+    id: z.string().min(1).describe("ID de l'opportunité à modifier"),
+    name: z.string().optional().describe("Nom / titre"),
+    ...opportunityWritableShape,
+})
+    .strict();
+// ---- Action schemas ----
+export const ActionSearchSchema = z
+    .object({
+    keywords: z.string().optional().describe("Mots-clés de recherche"),
+    candidateId: z.string().optional().describe("Filtrer par ID candidat"),
+    resourceId: z.string().optional().describe("Filtrer par ID ressource"),
+    contactId: z.string().optional().describe("Filtrer par ID contact"),
+    companyId: z.string().optional().describe("Filtrer par ID société"),
+    page: z.number().int().min(1).max(MAX_SEARCH_PAGE).default(1).describe(`Numéro de page (max: ${MAX_SEARCH_PAGE})`),
+    pageSize: z.number().int().min(1).max(MAX_PAGE_SIZE).default(DEFAULT_PAGE_SIZE).describe("Résultats par page"),
+})
+    .strict();
+// POST /actions requires a polymorphic `dependsOn` relationship (the entity the
+// action is attached to) and a numeric `typeOf` (dictionary id, see
+// `setting.action.*` in /application/dictionary). Valid attributes are `title`
+// and `text` (not subject/content) — anything else triggers a 422.
+export const ActionCreateSchema = z
+    .object({
+    typeOf: z
+        .union([z.coerce.number().int().min(0), z.string().min(1)])
+        .describe("Type d'action : ID numérique du dictionnaire (setting.action.*, via boond_application_dictionary) " +
+        "ou libellé personnalisé si BOOND_DICTIONARY_OVERRIDES est configuré"),
+    title: z.string().optional().describe("Titre de l'action"),
+    text: z.string().optional().describe("Contenu / notes de l'action"),
+    startDate: z
+        .string()
+        .regex(actionDateTimeRegex)
+        .optional()
+        .describe("Date de début au format ISO 8601 avec timezone (ex: 2026-06-05T10:00:00+0200)"),
+    endDate: z.string().regex(actionDateTimeRegex).optional().describe("Date de fin (même format que startDate)"),
+    candidateId: z.string().optional().describe("ID du candidat auquel rattacher l'action (dependsOn)"),
+    resourceId: z.string().optional().describe("ID de la ressource à laquelle rattacher l'action (dependsOn)"),
+    contactId: z.string().optional().describe("ID du contact auquel rattacher l'action (dependsOn)"),
+    opportunityId: z.string().optional().describe("ID de l'opportunité à laquelle rattacher l'action (dependsOn)"),
+    projectId: z.string().optional().describe("ID du projet auquel rattacher l'action (dependsOn)"),
+    companyId: z.string().optional().describe("ID de la société associée (uniquement en complément d'un contactId)"),
+    positioningId: z
+        .string()
+        .optional()
+        .describe("ID du positionnement à lier à l'action (relation positioning). Requis par l'API pour les types d'action liés aux positionnements (ex. RQ) — sans lui, erreur 422 « 1002 - Wrong or missing attribute (/data/relationships/positioning) »."),
+})
+    .strict();
+// PUT /actions/{id} (PATCH renvoie 405). Mise à jour partielle des seuls
+// attributs : aucune relation n'est envoyée, ce qui préserve le rattachement
+// `dependsOn`/`positioning` et la synchronisation calendrier (event Outlook /
+// Teams). `typeOf` accepte uniquement l'ID numérique du dictionnaire ici (pas
+// de résolution de libellé, faute d'entité `dependsOn` connue sur l'update).
+export const ActionUpdateSchema = z
+    .object({
+    id: z.string().min(1).describe("ID de l'action à modifier"),
+    typeOf: z.coerce
+        .number()
+        .int()
+        .min(0)
+        .optional()
+        .describe("Nouveau type : ID numérique du dictionnaire setting.action.* (via boond_application_dictionary)"),
+    title: z.string().optional().describe("Nouveau titre de l'action"),
+    text: z.string().optional().describe("Nouveau contenu / notes (HTML accepté). Remplace l'existant (pas d'ajout)."),
+    startDate: z
+        .string()
+        .regex(actionDateTimeRegex)
+        .optional()
+        .describe("Date de début au format ISO 8601 avec timezone (ex: 2026-06-05T10:00:00+0200)"),
+    endDate: z.string().regex(actionDateTimeRegex).optional().describe("Date de fin (même format que startDate)"),
+})
+    .strict();
+// ---- Timesheet schemas ----
+export const ResourceTimesheetSchema = z
+    .object({
+    resourceId: z.string().min(1).describe("ID de la ressource"),
+    month: z.number().int().min(1).max(12).optional().describe("Mois (1-12). Si omis, mois courant."),
+    year: z.number().int().min(2000).optional().describe("Année (ex: 2025). Si omis, année courante."),
+})
+    .strict();
+// `/times-reports` requires `startMonth` and `endMonth` in YYYY-MM form. Passing
+// YYYY-MM-DD or omitting them surfaces a 422 "Missing required attribute" from
+// the API, so the schema enforces both at the boundary.
+export const TimesheetSearchSchema = z
+    .object({
+    startMonth: z
+        .string()
+        .regex(/^\d{4}-\d{2}$/)
+        .describe("Mois de début au format YYYY-MM (ex: '2025-01'). Requis."),
+    endMonth: z
+        .string()
+        .regex(/^\d{4}-\d{2}$/)
+        .describe("Mois de fin au format YYYY-MM (ex: '2025-03'). Requis."),
+    keywords: z.string().optional().describe("Mots-clés (préfixes 'TPS', 'COMP'...)."),
+    page: z.number().int().min(1).max(MAX_SEARCH_PAGE).default(1).describe(`Numéro de page (max: ${MAX_SEARCH_PAGE})`),
+    pageSize: z
+        .number()
+        .int()
+        .min(1)
+        .max(MAX_PAGE_SIZE)
+        .default(DEFAULT_PAGE_SIZE)
+        .describe(`Nombre de résultats par page (max: ${MAX_PAGE_SIZE}, défaut: ${DEFAULT_PAGE_SIZE})`),
+})
+    .strict();
+export const TimesheetGetSchema = z
+    .object({
+    id: z.string().min(1).describe("Identifiant unique de la feuille de temps"),
+})
+    .strict();
+// ---- Project schemas ----
+export const ProjectCreateSchema = z
+    .object({
+    name: z.string().min(1).describe("Nom du projet / mission"),
+    companyId: z.string().optional().describe("ID de la société cliente"),
+    contactId: z.string().optional().describe("ID du contact associé"),
+    opportunityId: z.string().optional().describe("ID de l'opportunité liée"),
+    typeOf: z.number().int().optional().describe("Type de projet (ID du dictionnaire setting.typeOf.project)"),
+    state: stateField("project", "État du projet (0=en cours, 1=terminé, 2=archivé...)"),
+    startDate: z.string().optional().describe("Date de début (YYYY-MM-DD)"),
+    endDate: z.string().optional().describe("Date de fin (YYYY-MM-DD)"),
+    note: z.string().optional().describe("Notes / description du projet"),
+})
+    .strict();
+export const ProjectUpdateSchema = z
+    .object({
+    id: z.string().min(1).describe("ID du projet à modifier"),
+    name: z.string().optional().describe("Nom du projet"),
+    typeOf: z.number().int().optional().describe("Type de projet (ID du dictionnaire setting.typeOf.project)"),
+    state: stateField("project", "État du projet"),
+    startDate: z.string().optional().describe("Date de début (YYYY-MM-DD)"),
+    endDate: z.string().optional().describe("Date de fin (YYYY-MM-DD)"),
+    note: z.string().optional().describe("Notes"),
+})
+    .strict();
+// ---- Invoice schemas ----
+export const InvoiceCreateSchema = z
+    .object({
+    reference: z.string().optional().describe("Référence de la facture"),
+    orderId: z.string().optional().describe("ID du bon de commande associé"),
+    state: z.number().int().optional().describe("État de la facture"),
+    invoiceDate: z.string().optional().describe("Date de facturation (YYYY-MM-DD)"),
+    expectedPaymentDate: z.string().optional().describe("Date d'échéance/paiement attendu (YYYY-MM-DD)"),
+    amountExcludingTax: z.number().optional().describe("Montant HT"),
+    taxRate: z.number().optional().describe("Taux de TVA (%)"),
+    invoiceRecords: z.array(z.record(z.string(), z.unknown())).optional().describe("Lignes de facture Boond"),
+    invoicePayments: z.array(z.record(z.string(), z.unknown())).optional().describe("Paiements client de la facture"),
+    note: z.string().optional().describe("Notes / commentaires"),
+})
+    .strict();
+export const InvoiceUpdateSchema = z
+    .object({
+    id: z.string().min(1).describe("ID de la facture à modifier"),
+    reference: z.string().optional().describe("Référence de la facture"),
+    state: z.number().int().optional().describe("État de la facture"),
+    invoiceDate: z.string().optional().describe("Date de facturation (YYYY-MM-DD)"),
+    expectedPaymentDate: z.string().optional().describe("Date d'échéance/paiement attendu (YYYY-MM-DD)"),
+    amountExcludingTax: z.number().optional().describe("Montant HT"),
+    taxRate: z.number().optional().describe("Taux de TVA (%)"),
+    invoiceRecords: z.array(z.record(z.string(), z.unknown())).optional().describe("Lignes de facture Boond"),
+    invoicePayments: z.array(z.record(z.string(), z.unknown())).optional().describe("Paiements client de la facture"),
+    note: z.string().optional().describe("Notes"),
+})
+    .strict();
+export const InvoiceSearchSchema = z
+    .object({
+    keywords: z.string().optional().describe("Mots-clés de recherche (référence, société...)"),
+    companyId: z.string().optional().describe("Filtrer par ID société"),
+    projectId: z.string().optional().describe("Filtrer par ID projet"),
+    startDate: z.string().optional().describe("Date de début de période (YYYY-MM-DD)"),
+    endDate: z.string().optional().describe("Date de fin de période (YYYY-MM-DD)"),
+    period: z
+        .string()
+        .optional()
+        .describe("Type de période (created, updated, expectedPayment, performedPayment, period)"),
+    page: z.number().int().min(1).max(MAX_SEARCH_PAGE).default(1).describe(`Numéro de page (max: ${MAX_SEARCH_PAGE})`),
+    pageSize: z.number().int().min(1).max(MAX_PAGE_SIZE).default(DEFAULT_PAGE_SIZE).describe("Résultats par page"),
+})
+    .strict();
+// ---- Order schemas (Bons de commande) ----
+export const OrderCreateSchema = z
+    .object({
+    reference: z.string().optional().describe("Référence du bon de commande"),
+    companyId: z.string().optional().describe("ID de la société"),
+    projectId: z.string().optional().describe("ID du projet associé"),
+    state: z.number().int().optional().describe("État du bon de commande"),
+    orderDate: z.string().optional().describe("Date du bon de commande (YYYY-MM-DD)"),
+    startDate: z.string().optional().describe("Date de début couverte (YYYY-MM-DD)"),
+    endDate: z.string().optional().describe("Date de fin couverte (YYYY-MM-DD)"),
+    amountExcludingTax: z.number().optional().describe("Montant HT"),
+    customerAgreement: z.boolean().optional().describe("Accord client reçu"),
+    schedules: z.array(z.record(z.string(), z.unknown())).optional().describe("Lignes/échéances de commande"),
+    note: z.string().optional().describe("Notes / commentaires"),
+})
+    .strict();
+export const OrderUpdateSchema = z
+    .object({
+    id: z.string().min(1).describe("ID du bon de commande à modifier"),
+    reference: z.string().optional().describe("Référence"),
+    state: z.number().int().optional().describe("État"),
+    orderDate: z.string().optional().describe("Date (YYYY-MM-DD)"),
+    startDate: z.string().optional().describe("Date de début couverte (YYYY-MM-DD)"),
+    endDate: z.string().optional().describe("Date de fin couverte (YYYY-MM-DD)"),
+    amountExcludingTax: z.number().optional().describe("Montant HT"),
+    customerAgreement: z.boolean().optional().describe("Accord client reçu"),
+    schedules: z.array(z.record(z.string(), z.unknown())).optional().describe("Lignes/échéances de commande"),
+    note: z.string().optional().describe("Notes"),
+})
+    .strict();
+export const OrderSearchSchema = z
+    .object({
+    keywords: z.string().optional().describe("Mots-clés de recherche"),
+    companyId: z.string().optional().describe("Filtrer par ID société"),
+    projectId: z.string().optional().describe("Filtrer par ID projet"),
+    page: z.number().int().min(1).max(MAX_SEARCH_PAGE).default(1).describe(`Numéro de page (max: ${MAX_SEARCH_PAGE})`),
+    pageSize: z.number().int().min(1).max(MAX_PAGE_SIZE).default(DEFAULT_PAGE_SIZE).describe("Résultats par page"),
+})
+    .strict();
+// ---- Delivery schemas (Livraisons / CRA) ----
+export const DeliverySearchSchema = z
+    .object({
+    keywords: z.string().optional().describe("Mots-clés de recherche"),
+    projectId: z.string().optional().describe("Filtrer par ID projet"),
+    companyId: z.string().optional().describe("Filtrer par ID société"),
+    startDate: z.string().optional().describe("Date de début (YYYY-MM-DD)"),
+    endDate: z.string().optional().describe("Date de fin (YYYY-MM-DD)"),
+    page: z.number().int().min(1).max(MAX_SEARCH_PAGE).default(1).describe(`Numéro de page (max: ${MAX_SEARCH_PAGE})`),
+    pageSize: z.number().int().min(1).max(MAX_PAGE_SIZE).default(DEFAULT_PAGE_SIZE).describe("Résultats par page"),
+})
+    .strict();
+// ---- Absence schemas ----
+export const AbsenceCreateSchema = z
+    .object({
+    resourceId: z.string().min(1).describe("ID de la ressource en absence"),
+    typeOf: z.string().min(1).describe("Libellé de l'absence (congé payé, RTT, maladie, sans solde...)"),
+    startDate: z.string().min(1).describe("Date de début (YYYY-MM-DD)"),
+    endDate: z.string().min(1).describe("Date de fin (YYYY-MM-DD)"),
+    duration: z.number().optional().describe("Durée en jours ; calculée automatiquement si absente"),
+    workUnitTypeReference: z.number().int().min(1).optional().describe("Référence du type d'unité d'absence, défaut 1"),
+    absencesPeriods: z.array(z.record(z.string(), z.unknown())).optional().describe("Périodes d'absence Boond brutes"),
+    state: z.number().int().optional().describe("État de la demande (0=en attente, 1=validé, 2=refusé...)"),
+    note: z.string().optional().describe("Commentaire / motif"),
+})
+    .strict();
+export const AbsenceUpdateSchema = z
+    .object({
+    id: z.string().min(1).describe("ID de l'absence à modifier"),
+    startDate: z.string().optional().describe("Date de début (YYYY-MM-DD)"),
+    endDate: z.string().optional().describe("Date de fin (YYYY-MM-DD)"),
+    state: z.number().int().optional().describe("État de la demande"),
+    note: z.string().optional().describe("Commentaire / motif"),
+})
+    .strict();
+export const AbsenceSearchSchema = z
+    .object({
+    keywords: z.string().optional().describe("Mots-clés de recherche"),
+    resourceId: z.string().optional().describe("Filtrer par ID ressource"),
+    startMonth: z.string().optional().describe("Mois de début de période (YYYY-MM)"),
+    endMonth: z.string().optional().describe("Mois de fin de période (YYYY-MM)"),
+    page: z.number().int().min(1).max(MAX_SEARCH_PAGE).default(1).describe(`Numéro de page (max: ${MAX_SEARCH_PAGE})`),
+    pageSize: z.number().int().min(1).max(MAX_PAGE_SIZE).default(DEFAULT_PAGE_SIZE).describe("Résultats par page"),
+})
+    .strict();
+// ---- Expense schemas (Notes de frais) ----
+export const ExpenseCreateSchema = z
+    .object({
+    resourceId: z.string().min(1).describe("ID de la ressource"),
+    projectId: z.string().optional().describe("ID du projet associé"),
+    typeOf: z.string().optional().describe("Type de frais (transport, repas, hébergement...)"),
+    term: z.string().optional().describe("Période de la note de frais (YYYY-MM)"),
+    expenseDate: z.string().min(1).describe("Date du frais (YYYY-MM-DD)"),
+    amount: z.number().describe("Montant du frais"),
+    currency: z.string().optional().describe("Devise (EUR, USD...)"),
+    exchangeRateAgency: z.number().optional().describe("Taux de change agence"),
+    state: z.number().int().optional().describe("État de la note de frais"),
+    note: z.string().optional().describe("Description / justification"),
+})
+    .strict();
+export const ExpenseUpdateSchema = z
+    .object({
+    id: z.string().min(1).describe("ID de la note de frais à modifier"),
+    term: z.string().optional().describe("Période de la note de frais (YYYY-MM)"),
+    amount: z.number().optional().describe("Montant"),
+    exchangeRateAgency: z.number().optional().describe("Taux de change agence"),
+    state: z.number().int().optional().describe("État"),
+    note: z.string().optional().describe("Description"),
+})
+    .strict();
+export const ExpenseSearchSchema = z
+    .object({
+    keywords: z.string().optional().describe("Mots-clés de recherche"),
+    resourceId: z.string().optional().describe("Filtrer par ID ressource"),
+    projectId: z.string().optional().describe("Filtrer par ID projet"),
+    startDate: z.string().optional().describe("Date de début (YYYY-MM-DD)"),
+    endDate: z.string().optional().describe("Date de fin (YYYY-MM-DD)"),
+    page: z.number().int().min(1).max(MAX_SEARCH_PAGE).default(1).describe(`Numéro de page (max: ${MAX_SEARCH_PAGE})`),
+    pageSize: z.number().int().min(1).max(MAX_PAGE_SIZE).default(DEFAULT_PAGE_SIZE).describe("Résultats par page"),
+})
+    .strict();
+// ---- Product schemas ----
+export const ProductCreateSchema = z
+    .object({
+    name: z.string().min(1).describe("Nom du produit"),
+    reference: z.string().optional().describe("Référence du produit"),
+    unitPrice: z.number().optional().describe("Prix unitaire HT"),
+    taxRate: z.number().optional().describe("Taux de TVA (%)"),
+    state: z.number().int().optional().describe("État du produit"),
+    note: z.string().optional().describe("Description du produit"),
+})
+    .strict();
+export const ProductUpdateSchema = z
+    .object({
+    id: z.string().min(1).describe("ID du produit à modifier"),
+    name: z.string().optional().describe("Nom du produit"),
+    reference: z.string().optional().describe("Référence"),
+    unitPrice: z.number().optional().describe("Prix unitaire HT"),
+    taxRate: z.number().optional().describe("Taux de TVA (%)"),
+    state: z.number().int().optional().describe("État"),
+    note: z.string().optional().describe("Description"),
+})
+    .strict();
+// ---- Positioning schemas ----
+export const PositioningCreateSchema = z
+    .object({
+    candidateId: z.string().optional().describe("ID du candidat positionné"),
+    resourceId: z.string().optional().describe("ID de la ressource positionnée"),
+    projectId: z.string().optional().describe("ID du projet"),
+    opportunityId: z.string().optional().describe("ID de l'opportunité"),
+    state: z.number().int().optional().describe("État du positionnement"),
+    startDate: z.string().optional().describe("Date de début (YYYY-MM-DD)"),
+    endDate: z.string().optional().describe("Date de fin (YYYY-MM-DD)"),
+    note: z.string().optional().describe("Notes / commentaires"),
+})
+    .strict();
+export const PositioningSearchSchema = z
+    .object({
+    keywords: z
+        .string()
+        .optional()
+        .describe("Mots-clés de recherche. L'API y accepte aussi des références d'entités (AO<id>, CAND<id>, COMP<id>...) — les filtres *Id ci-dessous sont convertis automatiquement en de telles références."),
+    candidateId: z
+        .string()
+        .optional()
+        .describe("Filtrer par ID candidat (envoyé à l'API comme référence keywords CAND<id>)"),
+    resourceId: z
+        .string()
+        .optional()
+        .describe("Filtrer par ID ressource (envoyé à l'API comme référence keywords COMP<id>)"),
+    opportunityId: z
+        .string()
+        .optional()
+        .describe("Filtrer par ID opportunité (envoyé à l'API comme référence keywords AO<id>)"),
+    companyId: z
+        .string()
+        .optional()
+        .describe("Filtrer par ID société (envoyé à l'API comme référence keywords CSOC<id>)"),
+    contactId: z
+        .string()
+        .optional()
+        .describe("Filtrer par ID contact (envoyé à l'API comme référence keywords CCON<id>)"),
+    productId: z
+        .string()
+        .optional()
+        .describe("Filtrer par ID produit (envoyé à l'API comme référence keywords PROD<id>)"),
+    page: z.number().int().min(1).max(MAX_SEARCH_PAGE).default(1).describe(`Numéro de page (max: ${MAX_SEARCH_PAGE})`),
+    pageSize: z.number().int().min(1).max(MAX_PAGE_SIZE).default(DEFAULT_PAGE_SIZE).describe("Résultats par page"),
+})
+    .strict();
+// ---- Payment schemas ----
+export const PaymentSearchSchema = z
+    .object({
+    keywords: z.string().optional().describe("Mots-clés de recherche"),
+    invoiceId: z.string().optional().describe("Filtrer par ID facture"),
+    purchaseId: z.string().optional().describe("Filtrer par ID achat"),
+    companyId: z.string().optional().describe("Filtrer par ID société"),
+    projectId: z.string().optional().describe("Filtrer par ID projet"),
+    resourceId: z.string().optional().describe("Filtrer par ID ressource"),
+    startDate: z.string().optional().describe("Date de début (YYYY-MM-DD)"),
+    endDate: z.string().optional().describe("Date de fin (YYYY-MM-DD)"),
+    page: z.number().int().min(1).max(MAX_SEARCH_PAGE).default(1).describe(`Numéro de page (max: ${MAX_SEARCH_PAGE})`),
+    pageSize: z.number().int().min(1).max(MAX_PAGE_SIZE).default(DEFAULT_PAGE_SIZE).describe("Résultats par page"),
+})
+    .strict();
+// ---- Advantage schemas ----
+export const AdvantageSearchSchema = z
+    .object({
+    keywords: z.string().optional().describe("Mots-clés de recherche"),
+    resourceId: z.string().optional().describe("Filtrer par ID ressource"),
+    page: z.number().int().min(1).max(MAX_SEARCH_PAGE).default(1).describe(`Numéro de page (max: ${MAX_SEARCH_PAGE})`),
+    pageSize: z.number().int().min(1).max(MAX_PAGE_SIZE).default(DEFAULT_PAGE_SIZE).describe("Résultats par page"),
+})
+    .strict();
+// ---- Application schemas ----
+// ---- Validation schemas ----
+// `/validations` requires `startMonth` + `endMonth` (YYYY-MM). Optional filters
+// from the official RAML follow.
+export const ValidationSearchSchema = z
+    .object({
+    startMonth: z
+        .string()
+        .regex(/^\d{4}-\d{2}$/)
+        .describe("Mois de début YYYY-MM. Requis."),
+    endMonth: z
+        .string()
+        .regex(/^\d{4}-\d{2}$/)
+        .describe("Mois de fin YYYY-MM. Requis."),
+    keywords: z
+        .string()
+        .optional()
+        .describe("Mots-clés. Préfixes acceptés : 'TPS' (CRA), 'EXP' (frais), 'ABS' (absence), 'COMP' (ressource)."),
+    documentTypes: z
+        .array(z.enum(["absencesReport", "timesReport", "expensesReport"]))
+        .optional()
+        .describe("Types de documents à valider."),
+    resourceTypes: z
+        .array(z.number().int())
+        .optional()
+        .describe("IDs de types de ressource (dictionnaire setting.typeOf.resource)."),
+    validationStates: z
+        .array(z.enum(["waitingForValidation", "validated", "rejected"]))
+        .optional()
+        .describe("États de validation."),
+    validationAlerts: z.boolean().optional().describe("Filtrer sur les validations avec alertes."),
+    page: z.number().int().min(1).max(MAX_SEARCH_PAGE).default(1).describe(`Numéro de page (max: ${MAX_SEARCH_PAGE})`),
+    pageSize: z
+        .number()
+        .int()
+        .min(1)
+        .max(MAX_PAGE_SIZE)
+        .default(DEFAULT_PAGE_SIZE)
+        .describe(`Nombre de résultats par page (max: ${MAX_PAGE_SIZE}, défaut: ${DEFAULT_PAGE_SIZE})`),
+})
+    .strict();
+// ---- Notification schemas ----
+// `/notifications` requires the singular `category` (activity/thread/corporate)
+// per the official RAML. Optional `state` filters read/unread; `parentType`
+// narrows by entity module.
+export const NotificationSearchSchema = z
+    .object({
+    category: z
+        .enum(["activity", "thread", "corporate"])
+        .describe("Catégorie (requis): 'activity' (notifications d'activité), 'thread' (messages), 'corporate' (annonces)."),
+    state: z.enum(["new", "read"]).optional().describe("Filtrer par état de lecture."),
+    parentType: z
+        .array(z.string())
+        .optional()
+        .describe("Types de modules parents (ex: 'contract', 'global', 'project'...)."),
+    page: z.number().int().min(1).max(MAX_SEARCH_PAGE).default(1).describe(`Numéro de page (max: ${MAX_SEARCH_PAGE})`),
+    pageSize: z
+        .number()
+        .int()
+        .min(1)
+        .max(MAX_PAGE_SIZE)
+        .default(DEFAULT_PAGE_SIZE)
+        .describe(`Nombre de résultats par page (max: ${MAX_PAGE_SIZE}, défaut: ${DEFAULT_PAGE_SIZE})`),
+})
+    .strict();
+// ---- Reporting schemas ----
+// Sources (one search.raml per endpoint):
+//   https://doc.boondmanager.com/api-externe/raml-build/resources/reportingCompanies/search.raml
+//   .../reportingProjects/search.raml  .../reportingResources/search.raml
+//   .../reportingSynthesis/search.raml .../reportingProductionPlans/search.raml
+// Every reporting endpoint carries the `searchable` trait (perimeter filters)
+// plus endpoint-specific filters. These were previously dropped — only
+// startDate/endDate/keywords were forwarded — so a "filtered" reporting query
+// silently returned the full perimeter. Each tool now exposes its real filters.
+//
+// `period`/`periodDynamic` value sets are large and differ slightly per endpoint,
+// so they stay `z.string()` (documented in the description) rather than a strict
+// enum that could reject a value the API actually accepts. The small, stable
+// enums (reportingCategory, reportingType, positioningPeriod, useCache) are typed.
+const reportingPeriodField = z
+    .string()
+    .optional()
+    .describe("Découpage temporel : 'onePeriod' (unique, entre startDate/endDate), 'dynamicPeriod' (selon periodDynamic), " +
+    "'monthly' (6 mois depuis startDate), 'quarterly', 'semiAnnual', 'annual'. La synthèse accepte aussi 'weekly'.");
+const reportingPeriodDynamicField = z
+    .string()
+    .optional()
+    .describe("Période dynamique relative à aujourd'hui (avec period='dynamicPeriod') : today, thisWeek, thisMonth, " +
+    "thisTrimester, thisSemester, thisYear, thisFiscalYear, yesterday, lastWeek, lastMonth, lastTrimester, " +
+    "lastSemester, lastYear, lastFiscalYear, tomorrow, nextWeek, nextMonth, nextTrimester, nextSemester, " +
+    "nextYear, nextFiscalYear, lastCustomPeriod, nextCustomPeriod.");
+const reportingPeriodDynamicParametersField = z
+    .string()
+    .optional()
+    .describe("Paramètres de la période personnalisée (utilisé avec periodDynamic=lastCustomPeriod/nextCustomPeriod).");
+const reportingScorecardsField = strArray("IDs des scorecards (indicateurs) à retourner.");
+const reportingUseCacheField = z
+    .enum(["withCache", "withoutCache"])
+    .optional()
+    .describe("Cache de reporting : 'withCache' (valeurs mises en cache) ou 'withoutCache' (recalcul, défaut).");
+const reportingResourcesField = intArray("Filtrer sur ces IDs de ressources.");
+const reportingProjectsField = intArray("Filtrer sur ces IDs de projets.");
+const reportingContactsField = intArray("Filtrer sur ces IDs de contacts.");
+const reportingCompaniesField = intArray("Filtrer sur ces IDs de sociétés.");
+const reportingMaxField = (entity) => z
+    .number()
+    .int()
+    .min(1)
+    .max(10)
+    .optional()
+    .describe(`Nombre de ${entity} par page (1-10, défaut 1). Le nombre de résultats = ${entity} × indicateurs.`);
+// Perimeter + period filters shared by every reporting endpoint (searchable trait).
+const reportingCommonFields = {
+    keywords: z.string().optional().describe("Mots-clés."),
+    perimeterManagers: perimeterManagersField,
+    perimeterAgencies: perimeterAgenciesField,
+    perimeterPoles: perimeterPolesField,
+    perimeterBusinessUnits: perimeterBusinessUnitsField,
+    perimeterDynamic: perimeterDynamicField,
+    narrowPerimeter: narrowPerimeterField,
+    periodDynamic: reportingPeriodDynamicField,
+    periodDynamicParameters: reportingPeriodDynamicParametersField,
+    scorecards: reportingScorecardsField,
+    useCache: reportingUseCacheField,
+    page: pageField,
+    pageSize: pageSizeField,
+};
+const requiredDate = (label) => z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .describe(`${label} (YYYY-MM-DD). Requis par l'API.`);
+const optionalDate = (label) => z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional()
+    .describe(`${label} (YYYY-MM-DD).`);
+export const ReportingCompaniesSchema = z
+    .object({
+    ...reportingCommonFields,
+    startDate: requiredDate("Date de début"),
+    endDate: requiredDate("Date de fin"),
+    companiesStates: intArray("IDs d'états de sociétés (dictionnaire setting.state.company)."),
+    maxCompanies: reportingMaxField("sociétés"),
+    showPercentage: z.boolean().optional().describe("Afficher les valeurs en pourcentage plutôt qu'en valeur réelle."),
+    companies: reportingCompaniesField,
+})
+    .strict();
+export const ReportingProjectsSchema = z
+    .object({
+    ...reportingCommonFields,
+    startDate: optionalDate("Date de début"),
+    endDate: optionalDate("Date de fin"),
+    projectTypes: intArray("IDs de types de projets (dictionnaire setting.typeOf.project)."),
+    projectStates: intArray("IDs d'états de projets (dictionnaire setting.state.project)."),
+    maxProjects: reportingMaxField("projets"),
+    resources: reportingResourcesField,
+    projects: reportingProjectsField,
+    contacts: reportingContactsField,
+    companies: reportingCompaniesField,
+})
+    .strict();
+export const ReportingResourcesSchema = z
+    .object({
+    ...reportingCommonFields,
+    startDate: optionalDate("Date de début"),
+    endDate: optionalDate("Date de fin"),
+    reportingCategory: z
+        .enum(["showByResources", "showByPeriods"])
+        .optional()
+        .describe("Vue : 'showByResources' (défaut, sans returnedPeriod) ou 'showByPeriods' (returnedPeriod requis)."),
+    maxResources: reportingMaxField("ressources"),
+    resourceTypes: intArray("IDs de types de ressources (dictionnaire setting.typeOf.resource)."),
+    resourceStates: intArray("IDs d'états de ressources (dictionnaire setting.state.resource)."),
+    period: reportingPeriodField,
+    resources: reportingResourcesField,
+    projects: reportingProjectsField,
+    contacts: reportingContactsField,
+    companies: reportingCompaniesField,
+})
+    .strict();
+export const ReportingSynthesisSchema = z
+    .object({
+    ...reportingCommonFields,
+    startDate: requiredDate("Date de début"),
+    endDate: optionalDate("Date de fin"),
+    reportingType: z
+        .enum(["realData", "targetsData"])
+        .optional()
+        .describe("Type de données : 'realData' (défaut, réel) ou 'targetsData' (objectifs)."),
+    reportingCategory: z
+        .enum([
+        "commercialSynthesis",
+        "humanResourcesSynthesis",
+        "recruitmentSynthesis",
+        "activityExpensesSynthesis",
+        "billingSynthesis",
+        "globalSynthesis",
+    ])
+        .optional()
+        .describe("Catégorie de synthèse (défaut 'commercialSynthesis') : commercial, RH, recrutement, activité & frais, " +
+        "facturation, ou globale. `resources` n'est pas disponible hors d'une vue par ressources."),
+    period: reportingPeriodField,
+    resources: reportingResourcesField,
+    projects: reportingProjectsField,
+    contacts: reportingContactsField,
+    companies: reportingCompaniesField,
+    compareIndicators: strArray("Indicateurs à comparer entre deux périodes."),
+    compareIndicatorsPeriod: z
+        .string()
+        .optional()
+        .describe("Période de comparaison des indicateurs (défaut 'period')."),
+})
+    .strict();
+export const ReportingProductionPlansSchema = z
+    .object({
+    ...reportingCommonFields,
+    startDate: requiredDate("Date de début"),
+    endDate: requiredDate("Date de fin"),
+    resourceTypes: intArray("IDs de types de ressources (dictionnaire setting.typeOf.resource)."),
+    resourceStates: intArray("IDs d'états de ressources (dictionnaire setting.state.resource)."),
+    positioningStates: intArray("IDs d'états de positionnement (dictionnaire setting.state.positioning)."),
+    positioningPeriod: z
+        .enum(["created", "running"])
+        .optional()
+        .describe("'created' (positionnements créés entre les dates, défaut) ou 'running' (en cours sur la période)."),
+    showContracts: z.boolean().optional().describe("Afficher les contrats associés."),
+    projects: reportingProjectsField,
+    contacts: reportingContactsField,
+    companies: reportingCompaniesField,
+})
+    .strict();
+export const DictionaryGetSchema = z
+    .object({
+    dictionaryType: z
+        .string()
+        .min(1)
+        .describe("Type de dictionnaire (ex: typeOf/actions, typeOf/absences, states/candidates, states/resources, states/opportunities, states/projects, states/invoices, countries, currencies, languages...)"),
+})
+    .strict();
+// ---- Documents ----
+// Source: https://doc.boondmanager.com/api-externe/raml-build/resources/documents/search.raml
+// L'upload passe par `fileUrl` uniquement : l'API BoondManager télécharge le
+// fichier elle-même, le serveur MCP ne bufferise jamais d'octets de fichier
+// (et n'expose pas de lecture du système de fichiers local).
+export const DocumentParentTypes = [
+    "action",
+    "resourceResume",
+    "candidateResume",
+    "resource",
+    "candidate",
+    "expensesReport",
+    "timesReport",
+    "absencesReport",
+    "payment",
+    "company",
+    "project",
+    "order",
+    "product",
+    "purchase",
+    "delivery",
+    "groupment",
+    "inactivity",
+    "positioning",
+    "followeddocument",
+    "appentity",
+    "contract",
+    "invoice",
+    "providerinvoice",
+];
+export const DocumentCreateSchema = z
+    .object({
+    parentType: z
+        .enum(DocumentParentTypes)
+        .describe("Type d'entité parente. Notables : 'candidateResume' (CV de candidat), 'resourceResume' (CV de ressource), " +
+        "'candidate'/'resource' (dossier administratif), 'company', 'project', 'invoice'..."),
+    parentId: z.number().int().min(1).describe("ID de l'entité parente"),
+    fileUrl: z
+        .string()
+        .url()
+        .describe("URL (https) du fichier à téléverser — BoondManager télécharge le fichier depuis cette URL."),
+    parsing: z
+        .boolean()
+        .optional()
+        .describe("Lancer le parsing IA du CV après upload (uniquement pour parentType=candidateResume)."),
+})
+    .strict();
+//# sourceMappingURL=index.js.map

@@ -28,7 +28,6 @@
   "homepage": "https://github.com/fauguste/boondmanager-mcp-server#readme",
   "scripts": {
     "build": "tsc",
-    "prepare": "npm run build",
     "start": "node dist/index.js",
     "dev": "tsc --watch",
     "lint": "eslint src/",
