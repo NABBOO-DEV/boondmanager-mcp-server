@@ -157,6 +157,34 @@ export interface DownloadedDocument {
  */
 export declare function apiDownload(path: string): Promise<DownloadedDocument>;
 /**
+ * Guard for the single sanctioned POST of this read-only fork (see
+ * `apiExtractBiSql`): assert that `sql` is one read-only SELECT statement.
+ *
+ * BoondManager already rejects non-SELECT statements server-side on
+ * `/apps/extractbi/test` (probed: UPDATE/DELETE → 422 before execution), so
+ * this is defense in depth, mirroring the GET-only guard philosophy: even if
+ * the server-side validation regressed, no write could be smuggled through.
+ * Exported for unit testing.
+ */
+export declare function assertReadOnlySql(sql: string): void;
+/** Result of an ad-hoc ExtractBI SQL execution. */
+export interface ExtractBiSqlResult {
+    isValid: boolean;
+    preview: Array<Record<string, unknown>>;
+    /** Total row count before the server's 10-row preview cap (when reported). */
+    total?: number;
+}
+/**
+ * READ-ONLY FORK (NABBOO-DEV): the single sanctioned POST. BoondManager's
+ * `/apps/extractbi/test` endpoint executes an ad-hoc **SELECT** and returns a
+ * preview (max 10 rows, LIMIT/OFFSET rewritten server-side). Although the HTTP
+ * verb is POST, the operation is semantically a read: the server refuses any
+ * non-SELECT statement at validation time (probed), and `assertReadOnlySql`
+ * re-checks client-side. The path is hard-wired — this function cannot be
+ * repurposed to reach any other endpoint — and `apiRequest` stays GET-only.
+ */
+export declare function apiExtractBiSql(sql: string): Promise<ExtractBiSqlResult>;
+/**
  * POST a multipart/form-data payload to the BoondManager API (document
  * upload). Form values are simple string fields — the file itself travels by
  * reference via the `fileUrl` field (Boond downloads it server-side), so the

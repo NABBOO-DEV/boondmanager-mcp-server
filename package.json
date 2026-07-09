@@ -1,6 +1,6 @@
 {
   "name": "nabboo-boond-mcp-readonly",
-  "version": "2.8.0-nabboo.1",
+  "version": "2.8.0-nabboo.4",
   "description": "Fork read-only DUR (NABBOO-DEV) de boondmanager-mcp-server : outils d'ecriture jamais enregistres (immuable) + garde HTTP GET-only. Base upstream fauguste/boondmanager-mcp-server v2.8.0.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

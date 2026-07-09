@@ -737,6 +737,105 @@ export async function apiDownload(path: string): Promise<DownloadedDocument> {
 }
 
 /**
+ * Guard for the single sanctioned POST of this read-only fork (see
+ * `apiExtractBiSql`): assert that `sql` is one read-only SELECT statement.
+ *
+ * BoondManager already rejects non-SELECT statements server-side on
+ * `/apps/extractbi/test` (probed: UPDATE/DELETE → 422 before execution), so
+ * this is defense in depth, mirroring the GET-only guard philosophy: even if
+ * the server-side validation regressed, no write could be smuggled through.
+ * Exported for unit testing.
+ */
+export function assertReadOnlySql(sql: string): void {
+  const trimmed = sql.trim();
+  if (!/^select\b/i.test(trimmed)) {
+    throw new Error("Read-only server: only a single SELECT statement is permitted for ad-hoc ExtractBI SQL.");
+  }
+  // No statement chaining, no comment smuggling (`--`, `#`, `/* */`), and no
+  // SELECT variants that write or lock (`INTO OUTFILE/DUMPFILE`, `FOR UPDATE`).
+  if (/;/.test(trimmed) || /--|#|\/\*/.test(trimmed)) {
+    throw new Error("Read-only server: semicolons and SQL comments are not permitted in ad-hoc ExtractBI SQL.");
+  }
+  if (/\binto\s+(outfile|dumpfile)\b/i.test(trimmed) || /\bfor\s+update\b/i.test(trimmed)) {
+    throw new Error("Read-only server: INTO OUTFILE/DUMPFILE and FOR UPDATE are not permitted.");
+  }
+}
+
+/** Result of an ad-hoc ExtractBI SQL execution. */
+export interface ExtractBiSqlResult {
+  isValid: boolean;
+  preview: Array<Record<string, unknown>>;
+  /** Total row count before the server's 10-row preview cap (when reported). */
+  total?: number;
+}
+
+/**
+ * READ-ONLY FORK (NABBOO-DEV): the single sanctioned POST. BoondManager's
+ * `/apps/extractbi/test` endpoint executes an ad-hoc **SELECT** and returns a
+ * preview (max 10 rows, LIMIT/OFFSET rewritten server-side). Although the HTTP
+ * verb is POST, the operation is semantically a read: the server refuses any
+ * non-SELECT statement at validation time (probed), and `assertReadOnlySql`
+ * re-checks client-side. The path is hard-wired — this function cannot be
+ * repurposed to reach any other endpoint — and `apiRequest` stays GET-only.
+ */
+export async function apiExtractBiSql(sql: string): Promise<ExtractBiSqlResult> {
+  assertReadOnlySql(sql);
+
+  const { baseUrl, auth } = getConfig();
+  const path = "/apps/extractbi/test";
+  const url = resolveApiUrl(baseUrl, path);
+
+  const limiter = getRateLimiter();
+  if (limiter) await limiter.acquire();
+
+  const authHeader = await auth();
+  const timeoutMs = resolveTimeoutMs();
+  let response: Response;
+  try {
+    response = await fetch(url.toString(), {
+      method: "POST",
+      headers: {
+        [authHeader.name]: authHeader.value,
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      // Flat body — the endpoint expects `{ sql }`, not a JSON:API envelope
+      // (probed: `data.attributes` shapes get 422 "Missing required attribute (sql)").
+      body: JSON.stringify({ sql }),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (err) {
+    if (isAbortError(err)) {
+      throw new Error(
+        [
+          `BoondManager API request timed out after ${timeoutMs}ms`,
+          `Endpoint: POST ${path}`,
+          "Hint: Increase BOOND_HTTP_TIMEOUT_MS or check connectivity to the BoondManager API.",
+        ].join("\n"),
+        { cause: err }
+      );
+    }
+    throw err instanceof Error ? err : new Error(String(err));
+  }
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => "");
+    throw new Error(formatApiError(response.status, response.statusText, "POST", path, errorText));
+  }
+
+  const parsed = (await response.json()) as {
+    data?: { isValid?: boolean; preview?: Array<Record<string, unknown>>; total?: string | number };
+  };
+  const totalRaw = parsed.data?.total;
+  const total = totalRaw === undefined ? undefined : Number(totalRaw);
+  return {
+    isValid: parsed.data?.isValid === true,
+    preview: Array.isArray(parsed.data?.preview) ? parsed.data.preview : [],
+    ...(total !== undefined && Number.isFinite(total) ? { total } : {}),
+  };
+}
+
+/**
  * POST a multipart/form-data payload to the BoondManager API (document
  * upload). Form values are simple string fields — the file itself travels by
  * reference via the `fileUrl` field (Boond downloads it server-side), so the

@@ -119,18 +119,19 @@ export function registerAll(server, policy) {
  * Encodes a "lazy pattern" so the model reaches for the cheapest correct path
  * and never falls into N+1 loops for aggregates.
  */
-const USAGE_INSTRUCTIONS = `Serveur BoondManager en LECTURE SEULE (aucune écriture possible : outils de lecture uniquement).
+const USAGE_INSTRUCTIONS = `Serveur BoondManager en LECTURE SEULE (aucune écriture possible : outils de lecture uniquement). Tu disposes ici des outils pour interroger BoondManager : dès qu'une demande porte sur des consultants, CRA/temps, candidats, sociétés, contacts, opportunités, factures, commandes ou staffing, sers-toi de ces outils — ne réponds pas de mémoire.
 
 Pattern paresseux — pour TOUTE demande de données Boond, procède dans cet ordre :
 
-1. OUTIL SIMPLE. Si un outil direct couvre le besoin (boond_<domaine>_search / boond_<domaine>_get, ou un reporting natif), utilise-le. C'est le cas par défaut pour lister/consulter des fiches.
+1. OUTIL SIMPLE. Si un outil direct couvre le besoin (boond_<domaine>_search / boond_<domaine>_get), utilise-le. C'est le cas par défaut pour lister ou consulter des fiches individuelles.
 
-2. REQUÊTE SQL ENREGISTRÉE (ExtractBI). Dès que le besoin est un AGRÉGAT, un COMPTAGE, une JOINTURE ou un « X par Y » (ex. « candidats par responsable », « CA par société », « nombre de Y par mois »), NE fais PAS un appel par élément (anti-pattern N+1). À la place :
+2. REQUÊTE SQL ENREGISTRÉE (ExtractBI). Dès que le besoin est un AGRÉGAT, un COMPTAGE, une JOINTURE, un « X par Y » (ex. « candidats par responsable », « CA par société », « nombre de Y par mois »), OU une RELATION entre fiches (« l'équipe / les N-1 de X », « qui rapporte à qui », « les candidats de tel manager »), NE fais PAS un appel par élément (anti-pattern N+1). À la place :
    - boond_extractbi_list (filtre par mots-clés) pour trouver une requête existante ;
    - éventuellement boond_extractbi_get pour vérifier son SQL ;
    - boond_extractbi_run pour l'exécuter → résultat CSV agrégé côté serveur, en UN seul appel.
+   Préfère ExtractBI à un boond_reporting_* ou boond_workflow_* dès qu'il s'agit d'un comptage/agrégat ad hoc « par X » qu'aucun reporting natif ne couvre exactement (les workflows orchestrent eux-mêmes des recherches et peuvent recréer du N+1).
 
-3. PROPOSER D'EN CRÉER UNE. Si aucune requête enregistrée ne couvre le besoin, propose à l'utilisateur d'en créer une : fournis le SQL prêt à coller dans l'UI ExtractBI de BoondManager (les requêtes se créent/éditent côté Boond, pas via l'API). Ne retombe PAS sur du N+1 par défaut ; le N+1 (récupérer une relation fiche par fiche) reste un dernier recours explicitement assumé pour de petits volumes.`;
+3. SQL AD HOC (boond_extractbi_query). Si aucune requête enregistrée ne couvre le besoin, écris toi-même le SELECT et exécute-le avec boond_extractbi_query (lecture seule). Découvre les tables et colonnes avec boond_extractbi_schema (référence locale, instantanée) — ne va PAS chercher la doc sur le web. Préfère UNE requête avec JOIN qui ramène les libellés (ex. nom du responsable via TAB_USER) plutôt que des IDs à mapper après coup. Résultat plafonné à 10 lignes par appel → agrège (GROUP BY) pour tenir en ≤ 10 lignes, ou pagine par keyset (WHERE id > dernier_id ORDER BY id — LIMIT/OFFSET sont ignorés). Si la requête a vocation à resservir, propose à l'utilisateur de l'enregistrer dans l'UI ExtractBI de Boond. Ne retombe PAS sur du N+1 par défaut ; le N+1 (récupérer une relation fiche par fiche) reste un dernier recours explicitement assumé pour de petits volumes.`;
 export function createMcpServer() {
     const server = new McpServer({
         name: SERVER_NAME,
