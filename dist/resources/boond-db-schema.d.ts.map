@@ -1,1 +1,1 @@
-{"version":3,"file":"boond-db-schema.d.ts","sourceRoot":"","sources":["../../src/resources/boond-db-schema.ts"],"names":[],"mappings":"AAIA,4FAA4F;AAC5F,eAAO,MAAM,eAAe,EAAE,MAAM,CAAC,MAAM,EAAE;IAAE,CAAC,EAAE,MAAM,CAAC;IAAC,CAAC,EAAE,MAAM,CAAC,MAAM,EAAE,MAAM,CAAC,CAAA;CAAE,CA6wFpF,CAAC"}
+{"version":3,"file":"boond-db-schema.d.ts","sourceRoot":"","sources":["../../src/resources/boond-db-schema.ts"],"names":[],"mappings":"AAIA,4FAA4F;AAC5F,eAAO,MAAM,eAAe,EAAE,MAAM,CAAC,MAAM,EAAE;IAAE,CAAC,EAAE,MAAM,CAAC;IAAC,CAAC,EAAE,MAAM,CAAC,MAAM,EAAE,MAAM,CAAC,CAAA;CAAE,CAurGpF,CAAC"}

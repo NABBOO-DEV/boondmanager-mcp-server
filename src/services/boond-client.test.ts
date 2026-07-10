@@ -5,6 +5,8 @@ import {
   formatListResponse,
   formatDetailResponse,
   formatTabResponse,
+  buildIncludedIndex,
+  enrichRelationships,
   initClient,
   buildJwt,
   apiRequest,
@@ -298,6 +300,87 @@ describe("formatTabResponse", () => {
   it("should report 0 élément(s) for an empty array", () => {
     const result = formatTabResponse({ data: [] });
     expect(result).toContain("0 élément(s)");
+  });
+});
+
+describe("buildIncludedIndex", () => {
+  it("indexes included entities by type:id with a concise label", () => {
+    const index = buildIncludedIndex([
+      { id: "2902", type: "resource", attributes: { firstName: "Camille", lastName: "THEROND" } },
+      { id: "1", type: "agency", attributes: { name: "VACOA" } },
+      { id: "3", type: "pole", attributes: { name: "Défense - Spatial" } },
+      { id: "11919_resume", type: "document", attributes: { name: "CV.pdf" } },
+    ]);
+    expect(index.get("resource:2902")).toBe("Camille THEROND");
+    expect(index.get("agency:1")).toBe("VACOA");
+    expect(index.get("pole:3")).toBe("Défense - Spatial");
+    expect(index.get("document:11919_resume")).toBe("CV.pdf");
+  });
+
+  it("returns an empty index when included is absent or unlabelable", () => {
+    expect(buildIncludedIndex(undefined).size).toBe(0);
+    expect(buildIncludedIndex([{ id: "9", type: "x", attributes: {} }]).size).toBe(0);
+  });
+});
+
+describe("enrichRelationships", () => {
+  const index = new Map([
+    ["agency:1", "VACOA"],
+    ["resource:2902", "Camille THEROND"],
+  ]);
+
+  it("adds a label to single and array refs that the index knows", () => {
+    const out = enrichRelationships(
+      {
+        agency: { data: { id: "1", type: "agency" } },
+        team: {
+          data: [
+            { id: "2902", type: "resource" },
+            { id: "999", type: "resource" },
+          ],
+        },
+      },
+      index
+    );
+    const agency = out!.agency.data as { label?: string };
+    const team = out!.team.data as Array<{ id: string; label?: string }>;
+    expect(agency.label).toBe("VACOA");
+    expect(team[0].label).toBe("Camille THEROND");
+    expect(team[1].label).toBeUndefined(); // unknown id → left as-is
+  });
+
+  it("is a no-op when the index is empty or relationships are absent", () => {
+    const rels = { agency: { data: { id: "1", type: "agency" } } };
+    expect(enrichRelationships(rels, new Map())).toBe(rels);
+    expect(enrichRelationships(undefined, index)).toBeUndefined();
+  });
+
+  it("leaves null relationship data untouched", () => {
+    const out = enrichRelationships({ manager: { data: null } }, index);
+    expect(out!.manager.data).toBeNull();
+  });
+});
+
+describe("formatDetailResponse — résolution included", () => {
+  it("resolves relationship ids to labels from the included array", () => {
+    const result = formatDetailResponse({
+      data: {
+        id: "8839",
+        type: "candidate",
+        attributes: { firstName: "Anne-Charlotte", lastName: "GOUPIL" },
+        relationships: {
+          agency: { data: { id: "1", type: "agency" } },
+          mainManager: { data: { id: "2902", type: "resource" } },
+        },
+      },
+      included: [
+        { id: "1", type: "agency", attributes: { name: "VACOA" } },
+        { id: "2902", type: "resource", attributes: { firstName: "Camille", lastName: "THEROND" } },
+      ],
+    });
+    const parsed = JSON.parse(result);
+    expect(parsed.relationships.agency.data.label).toBe("VACOA");
+    expect(parsed.relationships.mainManager.data.label).toBe("Camille THEROND");
   });
 });
 

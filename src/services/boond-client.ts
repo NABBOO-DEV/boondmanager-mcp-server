@@ -9,7 +9,7 @@ import {
   DEFAULT_HTTP_RATE_LIMIT_RPS,
   DEFAULT_HTTP_RATE_LIMIT_BURST,
 } from "../constants.js";
-import type { BoondAuthProvider, BoondConfig, JsonApiResponse, SearchParams } from "../types.js";
+import type { BoondAuthProvider, BoondConfig, JsonApiResource, JsonApiResponse, SearchParams } from "../types.js";
 import { TokenBucket } from "./rate-limiter.js";
 import { oauthContext } from "./oauth.js";
 
@@ -936,6 +936,68 @@ function formatProjectedSummary(entity: unknown, fields: string[]): string {
   return parts.join(" | ");
 }
 
+/**
+ * Concise human label for an `included` JSON:API resource (a person's name, an
+ * agency/pole/company/document name…). Lets the model read "VACOA" instead of
+ * chasing agency id=1 with a second call — or worse, a SQL JOIN.
+ */
+function includedLabel(resource: JsonApiResource): string | undefined {
+  const a = resource.attributes ?? {};
+  const str = (v: unknown): string | undefined => (typeof v === "string" && v.trim() !== "" ? v.trim() : undefined);
+  const person = [a.firstName, a.lastName]
+    .filter((x): x is string => typeof x === "string" && x.trim() !== "")
+    .join(" ")
+    .trim();
+  return (person !== "" ? person : undefined) ?? str(a.name) ?? str(a.title) ?? str(a.reference) ?? str(a.fileName);
+}
+
+/**
+ * Index the `included` array by `type:id` → label. BoondManager returns related
+ * entities inline (JSON:API `included`); this turns them into a fast lookup so
+ * relationship refs can be resolved to names in the SAME response.
+ */
+export function buildIncludedIndex(included?: JsonApiResource[]): Map<string, string> {
+  const index = new Map<string, string>();
+  for (const r of included ?? []) {
+    const label = includedLabel(r);
+    if (label !== undefined) index.set(`${r.type}:${r.id}`, label);
+  }
+  return index;
+}
+
+/** Attach a resolved `label` to a relationship ref when the index knows it. */
+function labelRef(
+  ref: { id: string; type: string },
+  index: Map<string, string>
+): { id: string; type: string; label?: string } {
+  const label = index.get(`${ref.type}:${ref.id}`);
+  return label !== undefined ? { ...ref, label } : ref;
+}
+
+/**
+ * Return a copy of `relationships` where each `data` ref (single or array) is
+ * enriched with its `label` from the included index. Untouched when there is
+ * nothing to resolve, so the guard is free on responses without `included`.
+ */
+export function enrichRelationships(
+  relationships: JsonApiResource["relationships"],
+  index: Map<string, string>
+): JsonApiResource["relationships"] {
+  if (!relationships || index.size === 0) return relationships;
+  const out: NonNullable<JsonApiResource["relationships"]> = {};
+  for (const [key, rel] of Object.entries(relationships)) {
+    const data = rel?.data;
+    if (Array.isArray(data)) {
+      out[key] = { data: data.map((ref) => labelRef(ref, index)) };
+    } else if (data) {
+      out[key] = { data: labelRef(data, index) };
+    } else {
+      out[key] = rel;
+    }
+  }
+  return out;
+}
+
 export function formatListResponse(response: JsonApiResponse, entityType: string, fields?: string[]): string {
   const data = Array.isArray(response.data) ? response.data : [response.data];
   const total = response.meta?.totals?.rows;
@@ -970,11 +1032,12 @@ export function formatTabResponse(response: JsonApiResponse): string {
     return formatDetailResponse(response);
   }
 
+  const index = buildIncludedIndex(response.included);
   const entities = response.data.map((entity) => ({
     id: entity.id,
     type: entity.type,
     attributes: entity.attributes,
-    relationships: entity.relationships,
+    relationships: enrichRelationships(entity.relationships, index),
   }));
 
   let result = `${entities.length} élément(s)\n\n` + JSON.stringify(entities, null, 2);
@@ -990,8 +1053,14 @@ export function formatDetailResponse(response: JsonApiResponse): string {
   const entity = Array.isArray(response.data) ? response.data[0] : response.data;
   if (!entity) return "Entité non trouvée.";
 
+  const index = buildIncludedIndex(response.included);
   const result = JSON.stringify(
-    { id: entity.id, type: entity.type, attributes: entity.attributes, relationships: entity.relationships },
+    {
+      id: entity.id,
+      type: entity.type,
+      attributes: entity.attributes,
+      relationships: enrichRelationships(entity.relationships, index),
+    },
     null,
     2
   );

@@ -1,5 +1,5 @@
 import { apiDownload, apiUploadForm, formatDetailResponse } from "../services/boond-client.js";
-import { IdSchema, DocumentCreateSchema } from "../schemas/index.js";
+import { DocumentIdSchema, DocumentCreateSchema } from "../schemas/index.js";
 import { MAX_DOCUMENT_BYTES, CHARACTER_LIMIT } from "../constants.js";
 import { registerDeleteTool, MutationOutputSchema } from "./crud-factory.js";
 /** Mime types rendered as plain text instead of a base64 blob. */
@@ -18,7 +18,7 @@ Le contenu est retourné en ressource MCP embarquée (base64 pour les binaires t
 
 Args:
   - id (string): Identifiant du document`,
-        inputSchema: IdSchema,
+        inputSchema: DocumentIdSchema,
         annotations: {
             readOnlyHint: true,
             destructiveHint: false,

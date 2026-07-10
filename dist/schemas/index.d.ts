@@ -10,13 +10,13 @@ export declare const ResourceSearchSchema: z.ZodObject<{
         firstName: "firstName";
         lastName: "lastName";
         title: "title";
+        reference: "reference";
         resumeTd: "resumeTd";
         fullName: "fullName";
         strictFullName: "strictFullName";
         emails: "emails";
         titleSkills: "titleSkills";
         phones: "phones";
-        reference: "reference";
         resume: "resume";
         td: "td";
     }>>;
@@ -72,13 +72,13 @@ export declare const CandidateSearchSchema: z.ZodObject<{
         firstName: "firstName";
         lastName: "lastName";
         title: "title";
+        reference: "reference";
         resumeTd: "resumeTd";
         fullName: "fullName";
         strictFullName: "strictFullName";
         emails: "emails";
         titleSkills: "titleSkills";
         phones: "phones";
-        reference: "reference";
         resume: "resume";
         td: "td";
     }>>;
@@ -307,6 +307,9 @@ export declare const ProjectSearchSchema: z.ZodObject<{
 }, z.core.$strict>;
 export declare const EntityIdSchema: z.ZodString;
 export declare const IdSchema: z.ZodObject<{
+    id: z.ZodString;
+}, z.core.$strict>;
+export declare const DocumentIdSchema: z.ZodObject<{
     id: z.ZodString;
 }, z.core.$strict>;
 export declare const IdTabSchema: z.ZodObject<{

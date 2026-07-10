@@ -172,15 +172,15 @@ const USAGE_INSTRUCTIONS = `Serveur BoondManager en LECTURE SEULE (aucune écrit
 
 Pattern paresseux — pour TOUTE demande de données Boond, procède dans cet ordre :
 
-1. OUTIL SIMPLE. Si un outil direct couvre le besoin (boond_<domaine>_search / boond_<domaine>_get), utilise-le. C'est le cas par défaut pour lister ou consulter des fiches individuelles.
+RÈGLE DE CHOIX API vs SQL (la plus importante) : l'API (endpoints REST) est le défaut ; le SQL ExtractBI ne se justifie QUE pour une AGRÉGATION (COUNT/SUM/AVG/GROUP BY) ou une jointure PROFONDE (plus de 2 relations à traverser). En dessous de ce seuil, un endpoint existe et il est préférable (plus contrôlable, périmètre appliqué, pas de contexte SQL à écrire).
 
-2. REQUÊTE SQL ENREGISTRÉE (ExtractBI). Dès que le besoin est un AGRÉGAT, un COMPTAGE, une JOINTURE, un « X par Y » (ex. « candidats par responsable », « CA par société », « nombre de Y par mois »), OU une RELATION entre fiches (« l'équipe / les N-1 de X », « qui rapporte à qui », « les candidats de tel manager »), NE fais PAS un appel par élément (anti-pattern N+1). À la place :
-   - boond_extractbi_list (filtre par mots-clés) pour trouver une requête existante ;
-   - éventuellement boond_extractbi_get pour vérifier son SQL ;
-   - boond_extractbi_run pour l'exécuter → résultat CSV agrégé côté serveur, en UN seul appel.
-   Préfère ExtractBI à un boond_reporting_* ou boond_workflow_* dès qu'il s'agit d'un comptage/agrégat ad hoc « par X » qu'aucun reporting natif ne couvre exactement (les workflows orchestrent eux-mêmes des recherches et peuvent recréer du N+1).
+1. OUTIL SIMPLE (défaut). Si un outil direct couvre le besoin (boond_<domaine>_search / boond_<domaine>_get / onglets), utilise-le. Pour lister ou consulter des fiches individuelles, c'est toujours le bon choix.
 
-3. SQL AD HOC (boond_extractbi_query). Si aucune requête enregistrée ne couvre le besoin, écris toi-même le SELECT et exécute-le avec boond_extractbi_query (lecture seule). Découvre les tables et colonnes avec boond_extractbi_schema (référence locale, instantanée) — ne va PAS chercher la doc sur le web. Préfère UNE requête avec JOIN qui ramène les libellés (ex. nom du responsable via TAB_USER) plutôt que des IDs à mapper après coup. Résultat plafonné à 10 lignes par appel → agrège (GROUP BY) pour tenir en ≤ 10 lignes, ou pagine par keyset (WHERE id > dernier_id ORDER BY id — LIMIT/OFFSET sont ignorés). Si la requête a vocation à resservir, propose à l'utilisateur de l'enregistrer dans l'UI ExtractBI de Boond. Ne retombe PAS sur du N+1 par défaut ; le N+1 (récupérer une relation fiche par fiche) reste un dernier recours explicitement assumé pour de petits volumes.`;
+2. RÉSOUDRE UN ID EXTERNE = PAS DE SQL. Le nom du responsable, de l'agence, du pôle, de la société d'une fiche… n'exige AUCUNE requête : la fiche (boond_*_get et onglets) renvoie déjà chaque relation résolue — un champ « label » est ajouté à côté de l'« id » dans « relationships » (via le tableau JSON:API « included »). Lis le label. Idem pour une jointure simple (1 à 2 relations). N'écris PAS de JOIN SQL pour un simple libellé.
+
+3. AGRÉGAT / JOINTURE PROFONDE → ExtractBI. Dès qu'il faut COMPTER, SOMMER, MOYENNER, un « X par Y » (candidats par responsable, CA par société, nb de Y par mois), ou traverser plus de 2 relations, NE fais PAS un appel par élément (anti-pattern N+1). D'abord une requête ENREGISTRÉE : boond_extractbi_list (mots-clés) → éventuellement boond_extractbi_get → boond_extractbi_run (CSV agrégé côté serveur, UN appel). Préfère ExtractBI à boond_reporting_* / boond_workflow_* pour un comptage ad hoc « par X ».
+
+4. SQL AD HOC (boond_extractbi_query). Si aucune requête enregistrée ne couvre l'agrégat, écris le SELECT et exécute-le avec boond_extractbi_query (lecture seule). Découvre tables et colonnes avec boond_extractbi_schema (référence locale) — ne va PAS sur le web. Le JOIN SQL sert à AGRÉGER/FILTRER sur un libellé à grande échelle (COUNT par responsable), pas à obtenir un libellé unique (étape 2). Résultat plafonné à 10 lignes par appel → agrège (GROUP BY) pour tenir en ≤ 10 lignes, ou pagine par keyset (WHERE id > dernier_id ORDER BY id — LIMIT/OFFSET ignorés). Si la requête resservira, propose de l'enregistrer dans l'UI ExtractBI. Le N+1 (relation fiche par fiche) reste un dernier recours pour de petits volumes.`;
 
 export function createMcpServer(): McpServer {
   const server = new McpServer(

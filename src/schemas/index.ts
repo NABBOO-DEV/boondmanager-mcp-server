@@ -506,6 +506,22 @@ export const IdSchema = z
   })
   .strict();
 
+// Document ids are composite, not purely numeric: a numeric base + a type suffix
+// (e.g. `13285_resume` for a CV, `25282_document` for an attached file). EntityIdSchema
+// (^\d+$) rejects them, which silently breaks `boond_documents_get` — the model reads
+// "doit être numérique", drops the suffix, and hits a wrong/absent document. Still bounded
+// to a safe alphabet; assertSafeApiPath (boond-client.ts) is the path-injection backstop.
+export const DocumentIdSchema = z
+  .object({
+    id: z
+      .string()
+      .regex(/^\d+(_[a-z]+)?$/, "Identifiant de document : numérique ou composite (ex. 13285_resume, 25282_document)")
+      .describe(
+        "Identifiant du document — composite pour les CV et pièces attachées (ex. 13285_resume, 25282_document), pas seulement numérique"
+      ),
+  })
+  .strict();
+
 // ID + tab param schema
 export const IdTabSchema = z
   .object({

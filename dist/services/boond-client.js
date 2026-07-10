@@ -827,6 +827,62 @@ function formatProjectedSummary(entity, fields) {
     }
     return parts.join(" | ");
 }
+/**
+ * Concise human label for an `included` JSON:API resource (a person's name, an
+ * agency/pole/company/document name…). Lets the model read "VACOA" instead of
+ * chasing agency id=1 with a second call — or worse, a SQL JOIN.
+ */
+function includedLabel(resource) {
+    const a = resource.attributes ?? {};
+    const str = (v) => typeof v === "string" && v.trim() !== "" ? v.trim() : undefined;
+    const person = [a.firstName, a.lastName]
+        .filter((x) => typeof x === "string" && x.trim() !== "")
+        .join(" ")
+        .trim();
+    return (person !== "" ? person : undefined) ?? str(a.name) ?? str(a.title) ?? str(a.reference) ?? str(a.fileName);
+}
+/**
+ * Index the `included` array by `type:id` → label. BoondManager returns related
+ * entities inline (JSON:API `included`); this turns them into a fast lookup so
+ * relationship refs can be resolved to names in the SAME response.
+ */
+export function buildIncludedIndex(included) {
+    const index = new Map();
+    for (const r of included ?? []) {
+        const label = includedLabel(r);
+        if (label !== undefined)
+            index.set(`${r.type}:${r.id}`, label);
+    }
+    return index;
+}
+/** Attach a resolved `label` to a relationship ref when the index knows it. */
+function labelRef(ref, index) {
+    const label = index.get(`${ref.type}:${ref.id}`);
+    return label !== undefined ? { ...ref, label } : ref;
+}
+/**
+ * Return a copy of `relationships` where each `data` ref (single or array) is
+ * enriched with its `label` from the included index. Untouched when there is
+ * nothing to resolve, so the guard is free on responses without `included`.
+ */
+export function enrichRelationships(relationships, index) {
+    if (!relationships || index.size === 0)
+        return relationships;
+    const out = {};
+    for (const [key, rel] of Object.entries(relationships)) {
+        const data = rel?.data;
+        if (Array.isArray(data)) {
+            out[key] = { data: data.map((ref) => labelRef(ref, index)) };
+        }
+        else if (data) {
+            out[key] = { data: labelRef(data, index) };
+        }
+        else {
+            out[key] = rel;
+        }
+    }
+    return out;
+}
 export function formatListResponse(response, entityType, fields) {
     const data = Array.isArray(response.data) ? response.data : [response.data];
     const total = response.meta?.totals?.rows;
@@ -854,11 +910,12 @@ export function formatTabResponse(response) {
     if (!Array.isArray(response.data)) {
         return formatDetailResponse(response);
     }
+    const index = buildIncludedIndex(response.included);
     const entities = response.data.map((entity) => ({
         id: entity.id,
         type: entity.type,
         attributes: entity.attributes,
-        relationships: entity.relationships,
+        relationships: enrichRelationships(entity.relationships, index),
     }));
     let result = `${entities.length} élément(s)\n\n` + JSON.stringify(entities, null, 2);
     if (result.length > CHARACTER_LIMIT) {
@@ -870,7 +927,13 @@ export function formatDetailResponse(response) {
     const entity = Array.isArray(response.data) ? response.data[0] : response.data;
     if (!entity)
         return "Entité non trouvée.";
-    const result = JSON.stringify({ id: entity.id, type: entity.type, attributes: entity.attributes, relationships: entity.relationships }, null, 2);
+    const index = buildIncludedIndex(response.included);
+    const result = JSON.stringify({
+        id: entity.id,
+        type: entity.type,
+        attributes: entity.attributes,
+        relationships: enrichRelationships(entity.relationships, index),
+    }, null, 2);
     if (result.length > CHARACTER_LIMIT) {
         return result.substring(0, CHARACTER_LIMIT) + "\n\n[Résultat tronqué...]";
     }

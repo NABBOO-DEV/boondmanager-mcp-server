@@ -38,6 +38,7 @@ RÈGLE DE DÉCISION (regarde totalRows AVANT toute itération — il est connu d
 - **Entités Vacoa / Ginko / Navys = l'AGENCE** : TAB_PROFIL.ID_SOCIETE → TAB_SOCIETE.SOCIETE_RAISON. Valeurs : VACOA (majoritaire), NAVYS, GINKO, NABBOO.
 
 ## JOINs canoniques (copier-coller)
+> ⚠️ Pour un SIMPLE libellé sur UNE fiche (responsable, pôle, agence, société), N'ÉCRIS PAS de SQL : l'API le renvoie déjà résolu (champ \`label\` à côté de l'\`id\` dans les relations de la fiche, via \`included\`). Les JOINs ci-dessous ne servent QU'À agréger/filtrer sur ces libellés à grande échelle (ex. COUNT par responsable) — pas à obtenir un nom isolé.
 - **Nom du responsable** d'un candidat/ressource :
   \`FROM TAB_PROFIL PRF JOIN TAB_USER U ON PRF.ID_RESPMANAGER = U.ID_USER JOIN TAB_PROFIL MGR ON U.ID_PROFIL = MGR.ID_PROFIL\`
   → nom = \`CONCAT(MGR.PROFIL_PRENOM, ' ', MGR.PROFIL_NOM)\`.

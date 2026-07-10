@@ -1,4 +1,4 @@
-import type { BoondAuthProvider, JsonApiResponse, SearchParams } from "../types.js";
+import type { BoondAuthProvider, JsonApiResource, JsonApiResponse, SearchParams } from "../types.js";
 /**
  * Auth provider for the HTTP transport: reads the Bearer token from the
  * per-request AsyncLocalStorage populated by the transport layer and
@@ -193,6 +193,18 @@ export declare function apiExtractBiSql(sql: string): Promise<ExtractBiSqlResult
 export declare function apiUploadForm(path: string, _fields: Record<string, string>): Promise<JsonApiResponse>;
 export declare function buildSearchQuery(params: SearchParams): Record<string, QueryValue>;
 export declare function formatEntitySummary(entity: unknown): string;
+/**
+ * Index the `included` array by `type:id` → label. BoondManager returns related
+ * entities inline (JSON:API `included`); this turns them into a fast lookup so
+ * relationship refs can be resolved to names in the SAME response.
+ */
+export declare function buildIncludedIndex(included?: JsonApiResource[]): Map<string, string>;
+/**
+ * Return a copy of `relationships` where each `data` ref (single or array) is
+ * enriched with its `label` from the included index. Untouched when there is
+ * nothing to resolve, so the guard is free on responses without `included`.
+ */
+export declare function enrichRelationships(relationships: JsonApiResource["relationships"], index: Map<string, string>): JsonApiResource["relationships"];
 export declare function formatListResponse(response: JsonApiResponse, entityType: string, fields?: string[]): string;
 /**
  * Formate la réponse d'un endpoint d'onglet (ex: /resources/{id}/positionings).
